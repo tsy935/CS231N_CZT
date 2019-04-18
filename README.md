@@ -4,3 +4,14 @@ Welcome to CS231N project playground!
 ## Kaggle challenge
 * https://www.kaggle.com/c/imet-2019-fgvc6/overview
 * https://github.com/visipedia/imet-fgvcx
+
+## Data
+
+* saved at /home/rugezhao/data
+
+## Misc
+
+* Check storage usage 
+```
+df
+``` 
