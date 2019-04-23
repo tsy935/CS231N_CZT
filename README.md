@@ -38,3 +38,17 @@ df
 * Mount should be done automatically every time VM is started. (see https://cloud.google.com/compute/docs/disks/add-persistent-disk)
 
 * We should write all intermediate data or output files to /mnt/disks/large not folders under  ~/.
+
+##  Jupyter
+
+https://github.com/cs231n/gcloud.git has already been installed and setup.
+
+Jupyter notebook has been already setup.
+
+To launch notebook, Run
+
+```
+jupyter notebook
+```
+
+Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n 
