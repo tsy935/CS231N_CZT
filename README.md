@@ -5,9 +5,9 @@ Welcome to CS231N project playground!
 * https://www.kaggle.com/c/imet-2019-fgvc6/overview
 * https://github.com/visipedia/imet-fgvcx
 
-## Data
+## Data  
 
-* saved at /home/rugezhao/data
+* saved at /mnt/disks/large/data
 
 ## Housekeeping
 * Always work on your own branch. Use the following command to create a new branch:
@@ -25,9 +25,16 @@ git push origin [name_of_your_new_branch]
 ```
 * After you are confident about the changes you have made in your branch and want to merge to master branch, go to Github website to create a `pull request`
 
-## Misc
+## Storage
 
 * Check storage usage 
 ```
 df
 ``` 
+
+* You should see a 100GB (base disk for VM (Your home directory is on this disk ). if this disk is full we cannot access VM), and a 300GB large disk mounted at /mnt/disks/large. Our raw data is stored at /mnt/disks/large/data.
+
+
+* Mount should be done automatically every time VM is started. (see https://cloud.google.com/compute/docs/disks/add-persistent-disk)
+
+* We should write all intermediate data or output files to /mnt/disks/large not folders under  ~/.
