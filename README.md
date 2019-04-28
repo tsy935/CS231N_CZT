@@ -14,7 +14,7 @@ Welcome to CS231N project playground!
 
 * Original Training Data that contains labels that appear less than 3 times are dropped 
 
-* Rest of training data are split 8:1:1 into our own train/val/test. The mapping is in data/train_split.csv
+* Rest of training data are split 8:1:1 into our own train/val/test. The mapping is in data/train_split.csv (with one hot encoding). The ID and attributes are saved in original format in data/train_split_train.csv, data/train_split_val.csv, data/train_split_test.csv
 
 * Original data are  /mnt/disks/large/data/train.zip and test.zip
 
