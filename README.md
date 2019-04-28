@@ -9,6 +9,19 @@ Welcome to CS231N project playground!
 
 * saved at /mnt/disks/large/data
 
+### Data Split
+* Done in analyses/preprocessing.ipynb
+
+* Original Training Data that contains labels that appear less than 3 times are dropped 
+
+* Rest of training data are split 8:1:1 into our own train/val/test. The mapping is in data/train_split.csv
+
+* Original data are  /mnt/disks/large/data/train.zip and test.zip
+
+* Our own train/val/test (original .png files) are stored in /mnt/disks/large/data/train_split 
+
+* Small dataset for debug: /mnt/disks/large/debug_data
+
 ## Housekeeping
 * Always work on your own branch. Use the following command to create a new branch:
 ```
