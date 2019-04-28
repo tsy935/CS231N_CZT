@@ -64,4 +64,4 @@ To launch notebook, Run
 jupyter notebook
 ```
 
-Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n 
+Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n, http:34.83.253.121:8800 for Siyi, http:34.83.253.121:8899 for Mingkun 
