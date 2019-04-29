@@ -7,20 +7,23 @@ Welcome to CS231N project playground!
 
 ## Data  
 
-* saved at /mnt/disks/large/data
+* saved at `/mnt/disks/large/data`
 
 ### Data Split
-* Done in analyses/preprocessing.ipynb
+* Done in `analyses/preprocessing.ipynb`
 
 * Original Training Data that contains labels that appear less than 3 times are dropped 
 
-* Rest of training data are split 8:1:1 into our own train/val/test. The mapping is in data/train_split.csv (with one hot encoding). The ID and attributes are saved in original format in (Github folder) data/train_split_train.csv, data/train_split_val.csv, data/train_split_test.csv and also in vm disk data folder  /mnt/disks/large/data/train_split 
+* Rest of training data are split 8:1:1 into our own train/val/test. The mapping is in `data/train_split.csv` (with one hot encoding). The ID and attributes are saved in original format in (Github folder) `data/train_split_train.csv`, `data/train_split_val.csv`, `data/train_split_test.csv` and also in vm disk data folder `/mnt/disks/large/data/train_split`
 
-* Original data are  /mnt/disks/large/data/train.zip and test.zip
+* Original data are `/mnt/disks/large/data/train.zip` and `test.zip`
 
-* Our own train/val/test (original .png files) are stored in /mnt/disks/large/data/train_split 
+* Our own train/val/test (original .png files) are stored in `/mnt/disks/large/data/train_split`
 
-* Small dataset for debug: /mnt/disks/large/debug_data, train_split_train.csv, train_split_val.csv and train_split_test.csv for this small dataset is also stored here.
+* Small dataset for debug: `/mnt/disks/large/debug_data`, `train_split_train.csv`, `train_split_val.csv` and `train_split_test.csv` for this small dataset is also stored here.
+
+## Output
+* Please save all experimental results in `/mnt/disks/large/output`
 
 ## Housekeeping
 * Always work on your own branch. Use the following command to create a new branch:
@@ -64,4 +67,4 @@ To launch notebook, Run
 jupyter notebook
 ```
 
-Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n 
+Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n, http:34.83.253.121:8800 for Siyi, http:34.83.253.121:8899 for Mingkun 
