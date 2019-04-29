@@ -19,18 +19,22 @@ TRAIN_CSV = '/mnt/disks/large/debug_data/train_split_train.csv'
 DEV_CSV = '/mnt/disks/large/debug_data/train_split_val.csv'
 TEST_CSV = '/mnt/disks/large/debug_data/train_split_test.csv'
 
+# args file name
+ARGS_FILE_NAME = 'args.json'
+
 # random seed
 SEED = 231
 
 # number of classes
 NUM_CLASSES = 1103
+#NUM_CLASSES = 1000
 
 # per-channel mean & std of training set
 MEAN = [144.46578057, 156.0374637 , 165.11049366]
 STD = [64.50104194, 63.66100116, 63.80019134]
 
 # culture labels
-CULTURE_LABELS = np.arange(0,398)
+CULTURE_LABELS = list(np.arange(0,398))
 
 # number of random crops
 NUM_CROPS = 5

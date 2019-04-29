@@ -87,7 +87,7 @@ def get_logger(log_dir, name):
     return logger
 
 
-def get_save_dir(base_dir, name, training, id_max=50):
+def get_save_dir(base_dir, training, id_max=50):
     """Get a unique save directory by appending the smallest positive integer
     `id < id_max` that is not already taken (i.e., no dir exists with that id).
     Args:
@@ -100,7 +100,7 @@ def get_save_dir(base_dir, name, training, id_max=50):
     """
     for uid in range(1, id_max):
         subdir = 'train' if training else 'test'
-        save_dir = os.path.join(base_dir, subdir, '{}-{:02d}'.format(name, uid))
+        save_dir = os.path.join(base_dir, subdir, '{}-{:02d}'.format(subdir, uid))
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
             return save_dir
@@ -168,8 +168,18 @@ def eval_dict(y_pred, labels, thresh, average, orig_id_all, preproc_all, is_test
     # Use labels from 'resized' as ground truth because these are the original labels
 #    pred_dict = defaultdict(list)
 #    label_dict = defaultdict(list)
+    y_pred_labels = []
+    y_labels = []
     for idx, orig_id in enumerate(orig_id_all):
-        writeout_dict[orig_id] = (y_pred[idx] > thresh).astype(int)
+        print(y_pred[idx])
+        curr_pred = (y_pred[idx] > thresh).astype(int)
+        writeout_dict[orig_id] = curr_pred
+        y_pred_labels.append(curr_pred)
+        y_labels.append(labels[idx])
+    y_pred_labels = np.concatenate(y_pred_labels, axis=0)
+    y_labels = np.concatenate(y_labels, axis=0)
+    print('y_labels shape:{}'.format(y_labels.shape))
+    print('y_pred_labels shape:{}'.format(y_pred_labels.shape))
         
 #        
 #        pred_dict[orig_id].append(y_pred[idx])
@@ -187,11 +197,10 @@ def eval_dict(y_pred, labels, thresh, average, orig_id_all, preproc_all, is_test
 #            y.append(label_dict[key])
         
     if not is_test:
-        y_pred_labels = (y_pred > thresh).astype(int)
-        scores_dict['F2'] = fbeta_score(labels, y_pred_labels, beta=2, average=average)
-        scores_dict['F1'] = f1_score(labels, y_pred_labels, average=average)
-        scores_dict['recall'] = recall_score(labels, y_pred_labels, average=average)
-        scores_dict['precision'] = precision_score(labels, y_pred_labels, average=average)
+        scores_dict['F2'] = fbeta_score(y_labels, y_pred_labels, beta=2, average=average)
+        scores_dict['F1'] = f1_score(y_labels, y_pred_labels, average=average)
+        scores_dict['recall'] = recall_score(y_labels, y_pred_labels, average=average)
+        scores_dict['precision'] = precision_score(y_labels, y_pred_labels, average=average)
         return scores_dict, writeout_dict
     else:
         return writeout_dict

@@ -1,5 +1,4 @@
 import numpy as np
-import Path
 import os
 
 import torch
@@ -7,9 +6,9 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
 import pandas as pd
-import utils.utils
+import utils.utils as utils
 
-from data.dataset import IMetDataset
+from data.dataset import IMetDataset, my_collate
 from args.args import get_args
 from collections import OrderedDict
 from json import dumps
@@ -17,6 +16,8 @@ from models.models import ResNet50
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from path import Path
+
 
 from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED
 
@@ -27,14 +28,20 @@ def main(args):
         raise ValueError('For prediction only, please provide trained model checkpoint file.')
         
     # Get device
-    args.device, args.gpu_ids = utils.get_available_devices()
+    device, args.gpu_ids = utils.get_available_devices()
+    args.train_batch_size *= max(1, len(args.gpu_ids))
+    args.test_batch_size *= max(1, len(args.gpu_ids))
+    
+    # Get save directories
+    train_save_dir = utils.get_save_dir(args.save_dir, training=True)
+    test_save_dir = utils.get_save_dir(args.save_dir, training=False)
     
     # Set random seed
     utils.seed_torch(seed=SEED)
     
     # Train
     if args.do_train:
-        best_path = train(args)
+        best_path = train(args, device, train_save_dir)
         
     # Predict
     # TODO: add option to use other models
@@ -50,27 +57,28 @@ def main(args):
         else: # load from load_path
             model, _ = utils.load_model(model, args.load_path, args.gpu_ids)
          
-        model.to(args.device)
-        results = evaluate(model, args, args.device, is_test=False, write_outputs=True)
+        model.to(device)
+        results = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True)
         
         # Log to console
         results_str = ', '.join('{}: {:05.2f}'.format(k, v)
                                 for k, v in results.items())
         print('{} prediction results: {}'.format(args.split, results_str))
         
+        # Save args
+        args_file = os.path.join(save_dir, ARGS_FILE_NAME)
+        with open(output_config_file, 'w') as f:
+            f.write(model_to_save.config.to_json_string())
+        with open(args_file, 'w') as f:
+            json.dump(vars(args), f, indent=4, sort_keys=True)
+        
         
 
-def train(args):
-    # Set up logging and devices
-    args.save_dir = utils.get_save_dir(args.save_dir, args.name, training=True)
-    log = utils.get_logger(args.save_dir, args.name)
-    tbx = SummaryWriter(args.save_dir)
+def train(args, device, train_save_dir):
+    # Set up logging and devices   
+    log = utils.get_logger(train_save_dir, 'train')
+    tbx = SummaryWriter(train_save_dir)
     log.info('Args: {}'.format(dumps(vars(args), indent=4, sort_keys=True)))
-    args.batch_size *= max(1, len(args.gpu_ids))
-
-    # Set random seed
-    log.info('Using random seed {}...'.format(args.seed))
-    utils.seed_torch(args.seed)
 
     # Get model
     # TODO: add option to use other models
@@ -86,13 +94,13 @@ def train(args):
         model, step = utils.load_model(model, args.load_path, args.gpu_ids)
     else:
         step = 0
-    model = model.to(args.device)
+    model = model.to(device)
     
     # To train mode
     model.train()
 
     # Get saver
-    saver = utils.CheckpointSaver(args.save_dir,
+    saver = utils.CheckpointSaver(train_save_dir,
                                  max_checkpoints=args.max_checkpoints,
                                  metric_name=args.metric_name,
                                  maximize_metric=args.maximize_metric,
@@ -100,12 +108,12 @@ def train(args):
 
     # Get optimizer and scheduler
     optimizer = optim.Adam(params=model.parameters(), 
-                           lr=args.lr_init, weight_decay=args.lr_wd)
+                           lr=args.lr_init, weight_decay=args.l2_wd)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs)
     
     # Define loss function
     if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCEWithLogitsLoss(reduction='mean').to(args.device)
+        loss_fn = nn.BCELoss(reduction='mean').to(device)
     else:
         loss_fn = utils.FocalLoss(gamma=args.gamma)
 
@@ -132,11 +140,11 @@ def train(args):
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
             for imgs, labels, _, _ in train_loader:
-                batch_size, ncrops, C, H, W = imgs.size()                
+                batch_size, ncrops, C, H, W = imgs.size()  
                 
                 # Setup for forward
-                imgs = imgs.to(args.device)
-                labels = labels.to(args.device)
+                imgs = imgs.to(device)
+                labels = labels.to(device)
                 
                 # Zero out optimizer first
                 optimizer.zero_grad()
@@ -144,7 +152,6 @@ def train(args):
                 # Forward
                 y_pred = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
                 y_pred = y_pred.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
-                print('Shape of y_pred:{}'.format(y_pred.size()))
                 loss = loss_fn(y_pred, labels)
                 loss_val = loss.item()
 
@@ -171,9 +178,11 @@ def train(args):
                     log.info('Evaluating at step {}...'.format(step))
                     eval_results = evaluate(model, 
                                             args,
+                                            train_save_dir,
+                                            device,
                                             is_test=False,
                                             write_outputs=False)
-                    best_path = saver.save(step, model, eval_results[args.metric_name], args.device)
+                    best_path = saver.save(step, model, eval_results[args.metric_name], device)
                     
                     # Back to train mode
                     model.train()
@@ -191,8 +200,7 @@ def train(args):
     return best_path
 
 
-def evaluate(model, args, is_test=False, write_outputs=False):
-    
+def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=False):   
     # Define dataset
     if args.split == 'dev':
         data_dir = DEV_PATH
@@ -216,7 +224,7 @@ def evaluate(model, args, is_test=False, write_outputs=False):
     
     # loss function
     if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCEWithLogitsLoss(reduction='mean').to(args.device)
+        loss_fn = nn.BCELoss(reduction='mean').to(device)
     else:
         loss_fn = utils.FocalLoss(gamma=args.gamma)
     
@@ -228,65 +236,55 @@ def evaluate(model, args, is_test=False, write_outputs=False):
     orig_id_all = []
     preproc_all = []
     with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
-        # If test, no label; in our project, we may not use it
-        if is_test:
-            for imgs, _, orig_id, preproc in data_loader:
-                batch_size, ncrops, C, H, W = imgs.size() 
+        for imgs, labels, orig_id, preproc in data_loader:
+            batch_size, ncrops, C, H, W = imgs.size()
                 
-                # Setup for forward
-                imgs = imgs.to(args.device)
-                
-                # Forward
-                y_pred = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
-                y_pred = y_pred.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, 1, NUM_CLASSES), averaged over crops
-                
-                y_pred_all.append(y_pred.cpu().numpy())
-                orig_id_all.append(orig_id)
-#                preproc_all.append(preproc)
-                
-                # Log info
-                progress_bar.update(batch_size)
-                
-        # Else, train/dev
-        else:
-            for imgs, labels, orig_id, preproc in data_loader:
-                batch_size, ncrops, C, H, W = imgs.size()
-                
-                # Setup for forward
-                imgs = imgs.to(args.device)
-                labels = labels.to(args.device)
+            # Setup for forward
+            imgs = imgs.to(device)
+            if not is_test:
+                labels = labels[:,0,:] # shape (batch_size, NUM_CLASSES)
+                labels = labels.to(device)
 
-                # Forward
-                y_pred = model(imgs.view(-1, C, H, W))
-                y_pred = y_pred.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, 1, NUM_CLASSES), averaged over crops
-
+            # Forward
+            y_pred = model(imgs.view(-1, C, H, W))
+            y_pred = y_pred.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
+            
+            y_pred_all.append(y_pred.cpu().numpy())
+            orig_id_all.append(orig_id)
+                
+            # Log info
+            progress_bar.update(batch_size)
+            
+            if labels is not None: # if label is available
                 loss = loss_fn(y_pred, labels)
                 nll_meter.update(loss.item(), batch_size)
-                
-                y_pred_all.append(y_pred.cpu().numpy())
                 y_true_all.append(labels.cpu().numpy())
-                orig_id_all.append(orig_id)
-#                preproc_all.append(preproc)
-                
-                # Log info
-                progress_bar.update(batch_size)
-                progress_bar.set_postfix(NLL=nll_meter.avg)
-            
-    # Get averaged predictions and evaluation metrics
-    if is_test:
-        results = {}
-        writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.pred_thresh, args.metric_avg, orig_id_all, preproc_all, is_test)            
-    else:
-        scores_dict, writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.pred_thresh, args.metric_avg, orig_id_all, preproc_all, is_test)
+                    
+    
+    
+    # if label is available
+    if labels is not None:
+        scores_dict, writeout_dict = utils.eval_dict(y_pred_all, y_true_all, 
+                                                     args.pred_thresh, args.metric_avg, 
+                                                     orig_id_all, preproc_all, is_test)
         results_list = [('Loss', nll_meter.avg),
                         ('F2', scores_dict['F2']),
                         ('F1', scores_dict['F1']),
                         ('recall', scores_dict['recall']),
                         ('precision', scores_dict['precision'])]
         results = OrderedDict(results_list)
+    else: # if label is not available
+        results = {}
+        writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.pred_thresh, args.metric_avg, 
+                                        orig_id_all, preproc_all, is_test)
+  
+    #TMP
+    for key, val in writeout_dict.items():
+        pred1 = np.argwhere(val == 1.0).reshape(-1).tolist()
+        print(pred1)
     
     # Write prediction into csv file
-    if args.write_outputs:
+    if is_test and args.write_outputs:
         df_dict = {}            
         for key, val in writeout_dict.items():
             pred1 = np.argwhere(val == 1.0).reshape(-1).tolist()
@@ -294,7 +292,7 @@ def evaluate(model, args, is_test=False, write_outputs=False):
             df_dict[key] = pred_str
         
         df_out = pd.DataFrame(list(df_dict.items()), columns=['id','attribute_ids'])
-        out_file_name = os.path.join(args.save_dir,args.split+'_prediction.csv')
+        out_file_name = os.path.join(test_save_dir,args.split+'_prediction.csv')
         df_out.to_csv(out_file_name, index=False)
         print('Prediction written to {}!'.format(out_file_name))        
             

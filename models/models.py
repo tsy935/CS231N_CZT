@@ -22,7 +22,7 @@ class ResNet50(nn.Module):
             self.resnet50.load_state_dict(torch.load(args.load_path))
         
         if args.feature_extracting:
-            self.set_parameter_requires_grad(self.resnet50, feature_extracting=True)
+            self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)
             self.resnet50.classifier = Classifier()
         else:
             self.set_parameter_requires_grad(self.resnet50, 
@@ -31,10 +31,12 @@ class ResNet50(nn.Module):
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
         
+        self.sigmoid = nn.Sigmoid()
+        
     def forward(self, x):
-        return self.resnet50(x)
+        return self.sigmoid(self.resnet50(x))
     
-    def set_parameter_requires_grad(model, feature_extracting=False, nlayers_to_freeze=None):
+    def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
         # freeze some layers
         if nlayers_to_freeze is not None:
             ct = 0

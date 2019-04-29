@@ -1,4 +1,4 @@
-#!bin/bash
+#!/bin/bash
 
 cd ..
 
@@ -11,8 +11,8 @@ python ./main.py \
   --lr_init 0.001 \
   --l2_wd 0. \
   --num_epochs 3 \
-  --feature_extracting False \
-  --train_batch_size 32 \
+  --train_batch_size 16 \
   --loss_fn_name BCE \
   --write_outputs True \
+  --eval_steps 16 \
   --save_dir /mnt/disks/large/output/baseline

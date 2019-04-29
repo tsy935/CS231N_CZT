@@ -47,7 +47,7 @@ def get_args():
                         help='Name of dev metric to determine best checkpoint.')
     parser.add_argument('--eval_steps',
                         type=int,
-                        default=50000,
+                        default=10000,
                         help='Number of steps between successive evaluations.')   
     parser.add_argument('--load_path',
                         type=str,
