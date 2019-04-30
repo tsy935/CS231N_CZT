@@ -1,7 +1,8 @@
 import numpy as np
 import os
-
+import pickle
 import torch
+import json
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data
@@ -20,7 +21,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from path import Path
 
 
-from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED
+from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED, ARGS_FILE_NAME
 
 
 def main(args):
@@ -60,7 +61,7 @@ def main(args):
             best_thresh = val_results['best_thresh']
         else: # load from newly trained model
             best_path = os.path.join(train_save_dir, 'best.pth.tar')
-            best_val_results = os.path.join(train_save_dir, 'best_val_results.pickle')
+            best_val_results = os.path.join(train_save_dir, 'best_val_results')
             model, _ = utils.load_model(model, best_path, args.gpu_ids)
             with open(best_val_results, 'rb') as f:
                 val_results = pickle.load(f)
@@ -74,12 +75,12 @@ def main(args):
                                 for k, v in results.items())
         print('{} prediction results: {}'.format(args.split, results_str))
         
-        # Save args
-        args_file = os.path.join(save_dir, ARGS_FILE_NAME)
-        with open(output_config_file, 'w') as f:
-            f.write(model_to_save.config.to_json_string())
-        with open(args_file, 'w') as f:
-            json.dump(vars(args), f, indent=4, sort_keys=True)
+    # save args
+    args.train_save_dir = train_save_dir
+    args.test_save_dir = test_save_dir
+    args_file = os.path.join(train_save_dir, ARGS_FILE_NAME)
+    with open(args_file, 'w') as f:
+         json.dump(vars(args), f, indent=4, sort_keys=True)
         
         
 
@@ -88,12 +89,6 @@ def train(args, device, train_save_dir):
     log = utils.get_logger(train_save_dir, 'train')
     tbx = SummaryWriter(train_save_dir)
     log.info('Args: {}'.format(dumps(vars(args), indent=4, sort_keys=True)))
-    
-    # Extract features using pretrained model
-    #feature_extractor = ResNet50(args)
-    #feature_extractor = nn.DataParallel(feature_extractor, args.gpu_ids)
-    #feature_extractor = feature_extractor.to(device)
-    
 
     # Get model
     # TODO: add option to use other models
@@ -265,13 +260,13 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     orig_id_all = []
     preproc_all = []
     with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
-        for imgs, labels, orig_id, preproc in data_loader:
+        for imgs, labels, orig_id, _ in data_loader:
             batch_size, ncrops, C, H, W = imgs.size()
             #batch_size, C, H, W = imgs.size()
                 
             # Setup for forward
             imgs = imgs.to(device)
-            if not is_test:
+            if labels is not None:
                 labels = labels[:,0,:].to(device) # shape (batch_size, NUM_CLASSES)
                 #labels = labels.to(device)
                 
@@ -303,7 +298,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
             thresh_search = False
             thresh = best_thresh
         scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
-                                                     orig_id_all, preproc_all, is_test, 
+                                                     orig_id_all, preproc_all, is_test=False, 
                                                      thresh_search=thresh_search, thresh=thresh)
         results_list = [('Loss', nll_meter.avg),
                         ('F2', scores_dict['F2']),
@@ -314,7 +309,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         results = OrderedDict(results_list)
     else: # if label is not available
         writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
-                                        orig_id_all, preproc_all, is_test, 
+                                        orig_id_all, preproc_all, is_test=True, 
                                         thresh_search=False, thresh=best_thresh)
         results = {}
 

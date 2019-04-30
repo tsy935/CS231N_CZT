@@ -25,8 +25,8 @@ class ResNet50(nn.Module):
         if args.feature_extracting:
             self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)
             num_ftrs = self.resnet50.fc.in_features
-            #self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
-            self.resnet50.fc = MultiLayerPerceptron(num_ftrs)
+            self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+            #self.resnet50.fc = MultiLayerPerceptron(num_ftrs)
             
             # TEMP: densenet121
             #num_ftrs = self.resnet50.classifier.in_features
@@ -39,7 +39,6 @@ class ResNet50(nn.Module):
                                              nlayers_to_freeze=args.nlayers_to_freeze)
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
-        
         
     def forward(self, x):
         return self.resnet50(x)

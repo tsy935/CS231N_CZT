@@ -248,7 +248,7 @@ def comp_pos_weights(csv_file):
     for i, freq in enumerate(frequencies):
         if freq != 0.:
             pos_weights.append((len(df)-freq) / freq) # positive weight = (num of negative) / (num of positive)
-        else: # for removed classes, just set pos_weights to 0
+        else: # for removed classes, just set pos_weights to 1
             pos_weights.append(1.)
             
     #print('pos_weights:{}'.format(pos_weights))
@@ -386,6 +386,7 @@ class AverageMeter:
 class FocalLoss(nn.Module):
     """Focal loss: Borrowed from this kernel:
     https://www.kaggle.com/backaggle/imet-fastai-starter-focal-and-fbeta-loss#Create-learner-with-densenet121-and-FocalLoss
+    https://www.kaggle.com/c/human-protein-atlas-image-classification/discussion/78109
     """
     def __init__(self, gamma=2):
         super().__init__()
@@ -402,5 +403,7 @@ class FocalLoss(nn.Module):
 
         invprobs = F.logsigmoid(-input * (target * 2.0 - 1.0))
         loss = (invprobs * self.gamma).exp() * loss
+        if len(loss.size()) == 2:
+            loss = loss.sum(dim=1)
 
-        return loss.sum(dim=1).mean()
+        return loss.mean()

@@ -102,9 +102,12 @@ class IMetDataset(data.Dataset):
             else: # resize only or evaluate mode
                 label_tensor = torch.zeros((NUM_CROPS+1, NUM_CLASSES)) # shape (6, NUM_CLASSES)
                 for i in label:
-                    label_tensor[:, int(i)] = 1                                      
+                    label_tensor[:, int(i)] = 1
+            
+            #pos_weights = self.compute_pos_weights(label_tensor)
         else: # if label not available
             label_tensor = None
+            #pos_weights = None
         
         
         #print('Shape of label_tensor:{}'.format(label_tensor.size()))
@@ -146,7 +149,23 @@ class IMetDataset(data.Dataset):
                                   ])}
         
         return transforms[transform_method]
-            
+    
+    def compute_pos_weights(self, label_tensor):
+        """
+        Compute pos_weight for each class in the batch, pos_weight = (# negative samples) / (# positive samples)
+        Args:
+            label_tensor: Tensor of one-hot encoded labels, shape (batch_size, num_classes)
+        """
+        label = label_tensor.numpy()
+        batch_size = label.shape[0]
+        frequencies = np.sum(label, axis=0)
+        
+        pos_weights = np.ones((1, NUM_CLASSES))
+        indices = frequencies != 0.
+        pos_weights[indices] = np.divide(batch_size - frequencies[indices], frequencies[indices])
+        print(pos_weights)
+        return pos_weights
+                   
 
 class IMetDatasetBase(data.Dataset):
     """
