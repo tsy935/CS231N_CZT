@@ -27,14 +27,14 @@ SEED = 231
 
 # number of classes
 NUM_CLASSES = 1103
-#NUM_CLASSES = 1000
 
 # per-channel mean & std of training set
-MEAN = [144.46578057, 156.0374637 , 165.11049366]
-STD = [64.50104194, 63.66100116, 63.80019134]
+MEAN = [0.56584825, 0.61147285, 0.6472829]
+STD = [0.25330281, 0.25008629, 0.25073694]
 
 # culture labels
 CULTURE_LABELS = list(np.arange(0,398))
 
 # number of random crops
 NUM_CROPS = 5
+#NUM_CROPS = 0

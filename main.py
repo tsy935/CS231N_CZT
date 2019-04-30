@@ -8,11 +8,12 @@ import torch.utils.data as data
 import pandas as pd
 import utils.utils as utils
 
-from data.dataset import IMetDataset, my_collate
+from data.dataset import IMetDataset
+#from data.dataset import IMetDatasetBase
 from args.args import get_args
 from collections import OrderedDict
 from json import dumps
-from models.models import ResNet50
+from models.models import ResNet50, MultiLayerPerceptron
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -30,35 +31,43 @@ def main(args):
     # Get device
     device, args.gpu_ids = utils.get_available_devices()
     args.train_batch_size *= max(1, len(args.gpu_ids))
-    args.test_batch_size *= max(1, len(args.gpu_ids))
+    args.test_batch_size *= max(1, len(args.gpu_ids))    
     
-    # Get save directories
-    train_save_dir = utils.get_save_dir(args.save_dir, training=True)
-    test_save_dir = utils.get_save_dir(args.save_dir, training=False)
     
     # Set random seed
     utils.seed_torch(seed=SEED)
     
     # Train
     if args.do_train:
-        best_path = train(args, device, train_save_dir)
+        train_save_dir = utils.get_save_dir(args.save_dir, training=True)
+        train(args, device, train_save_dir)
+        
         
     # Predict
     # TODO: add option to use other models
     if args.do_predict:
+        test_save_dir = utils.get_save_dir(args.save_dir, training=False)
         if args.model_name == 'baseline':
             model = ResNet50(args)
 #        else:
 #            model = CNN_RNN(args)
             
         model = nn.DataParallel(model, args.gpu_ids)
-        if args.do_train and (best_path is not None): # load the newly trained model
-            model, _ = utils.load_model(model, best_path, args.gpu_ids)
-        else: # load from load_path
+        if not args.do_train: # load from saved model
             model, _ = utils.load_model(model, args.load_path, args.gpu_ids)
+            with open(args.best_val_results, 'rb') as f:
+                val_results = pickle.load(f)
+            best_thresh = val_results['best_thresh']
+        else: # load from newly trained model
+            best_path = os.path.join(train_save_dir, 'best.pth.tar')
+            best_val_results = os.path.join(train_save_dir, 'best_val_results.pickle')
+            model, _ = utils.load_model(model, best_path, args.gpu_ids)
+            with open(best_val_results, 'rb') as f:
+                val_results = pickle.load(f)
+            best_thresh = val_results['best_thresh']
          
         model.to(device)
-        results = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True)
+        results = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
         
         # Log to console
         results_str = ', '.join('{}: {:05.2f}'.format(k, v)
@@ -79,11 +88,18 @@ def train(args, device, train_save_dir):
     log = utils.get_logger(train_save_dir, 'train')
     tbx = SummaryWriter(train_save_dir)
     log.info('Args: {}'.format(dumps(vars(args), indent=4, sort_keys=True)))
+    
+    # Extract features using pretrained model
+    #feature_extractor = ResNet50(args)
+    #feature_extractor = nn.DataParallel(feature_extractor, args.gpu_ids)
+    #feature_extractor = feature_extractor.to(device)
+    
 
     # Get model
     # TODO: add option to use other models
     log.info('Building model...')
     if args.model_name == 'baseline':
+    #    model = MultiLayerPerceptron(1024)
         model = ResNet50(args)
 #    else:
 #        model = CNN_RNN(args)
@@ -112,8 +128,9 @@ def train(args, device, train_save_dir):
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs)
     
     # Define loss function
+    pos_weights = utils.comp_pos_weights(TRAIN_CSV)
     if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCELoss(reduction='mean').to(device)
+        loss_fn = nn.BCEWithLogitsLoss(reduction='mean').to(device) # more stable than BCELoss
     else:
         loss_fn = utils.FocalLoss(gamma=args.gamma)
 
@@ -130,6 +147,7 @@ def train(args, device, train_save_dir):
                                    num_workers=args.num_workers)
     
 
+
     # Train
     log.info('Training...')
     steps_till_eval = args.eval_steps
@@ -141,30 +159,36 @@ def train(args, device, train_save_dir):
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
             for imgs, labels, _, _ in train_loader:
                 batch_size, ncrops, C, H, W = imgs.size()  
+                #batch_size, C, H, W = imgs.size()
                 
                 # Setup for forward
                 imgs = imgs.to(device)
                 labels = labels.to(device)
-                
+                                
                 # Zero out optimizer first
                 optimizer.zero_grad()
                 
                 # Forward
-                y_pred = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
-                y_pred = y_pred.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
-                loss = loss_fn(y_pred, labels)
+                logits = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
+                logits = logits.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
+                #logits = model(imgs)
+                #preds = torch.sigmoid(logits)
+                
+                loss = loss_fn(logits, labels) # we use BCEWithLogitsLoss
                 loss_val = loss.item()
 
                 # Backward
                 loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
-                scheduler.step(step // batch_size)
+                
 
                 # Log info
                 step += batch_size
                 progress_bar.update(batch_size)
                 progress_bar.set_postfix(epoch=epoch,
-                                         Loss=loss_val)
+                                         loss=loss_val,
+                                         lr=optimizer.param_groups[0]['lr'])
                 tbx.add_scalar('train/Loss', loss_val, step)
                 tbx.add_scalar('train/LR',
                                optimizer.param_groups[0]['lr'],
@@ -176,13 +200,13 @@ def train(args, device, train_save_dir):
 
                     # Evaluate and save checkpoint
                     log.info('Evaluating at step {}...'.format(step))
-                    eval_results = evaluate(model, 
+                    eval_results = evaluate(model,                                            
                                             args,
                                             train_save_dir,
                                             device,
                                             is_test=False,
                                             write_outputs=False)
-                    best_path = saver.save(step, model, eval_results[args.metric_name], device)
+                    best_path = saver.save(step, model, eval_results[args.metric_name], device, eval_results)
                     
                     # Back to train mode
                     model.train()
@@ -196,11 +220,15 @@ def train(args, device, train_save_dir):
                     log.info('Visualizing in TensorBoard...')
                     for k, v in eval_results.items():
                         tbx.add_scalar('dev/{}'.format(k), v, step)
-
+           
+        
+        # step lr scheduler
+        scheduler.step()
+        
     return best_path
 
 
-def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=False):   
+def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=False, best_thresh=None, feature_extractor=None):   
     # Define dataset
     if args.split == 'dev':
         data_dir = DEV_PATH
@@ -223,8 +251,9 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     nll_meter = utils.AverageMeter()
     
     # loss function
+    pos_weights = utils.comp_pos_weights(TRAIN_CSV)
     if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCELoss(reduction='mean').to(device)
+        loss_fn = nn.BCEWithLogitsLoss(reduction='mean').to(device)
     else:
         loss_fn = utils.FocalLoss(gamma=args.gamma)
     
@@ -238,50 +267,62 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
         for imgs, labels, orig_id, preproc in data_loader:
             batch_size, ncrops, C, H, W = imgs.size()
+            #batch_size, C, H, W = imgs.size()
                 
             # Setup for forward
             imgs = imgs.to(device)
             if not is_test:
-                labels = labels[:,0,:] # shape (batch_size, NUM_CLASSES)
-                labels = labels.to(device)
+                labels = labels[:,0,:].to(device) # shape (batch_size, NUM_CLASSES)
+                #labels = labels.to(device)
+                
 
             # Forward
-            y_pred = model(imgs.view(-1, C, H, W))
-            y_pred = y_pred.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
+            logits = model(imgs.view(-1, C, H, W))
+            logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
+            #logits = model(imgs)
+            y_pred = torch.sigmoid(logits)
             
             y_pred_all.append(y_pred.cpu().numpy())
-            orig_id_all.append(orig_id)
+            orig_id_all.extend(list(orig_id))
                 
             # Log info
             progress_bar.update(batch_size)
             
             if labels is not None: # if label is available
-                loss = loss_fn(y_pred, labels)
+                loss = loss_fn(logits, labels)
                 nll_meter.update(loss.item(), batch_size)
                 y_true_all.append(labels.cpu().numpy())
                     
     
-    
     # if label is available
     if labels is not None:
-        scores_dict, writeout_dict = utils.eval_dict(y_pred_all, y_true_all, 
-                                                     args.pred_thresh, args.metric_avg, 
-                                                     orig_id_all, preproc_all, is_test)
+        if is_test == False: # only threshold search on validation set
+            thresh_search = True
+            thresh = None
+        else:
+            thresh_search = False
+            thresh = best_thresh
+        scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
+                                                     orig_id_all, preproc_all, is_test, 
+                                                     thresh_search=thresh_search, thresh=thresh)
         results_list = [('Loss', nll_meter.avg),
                         ('F2', scores_dict['F2']),
                         ('F1', scores_dict['F1']),
                         ('recall', scores_dict['recall']),
-                        ('precision', scores_dict['precision'])]
+                        ('precision', scores_dict['precision']),
+                        ('best_thresh', best_thresh)]
         results = OrderedDict(results_list)
     else: # if label is not available
+        writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
+                                        orig_id_all, preproc_all, is_test, 
+                                        thresh_search=False, thresh=best_thresh)
         results = {}
-        writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.pred_thresh, args.metric_avg, 
-                                        orig_id_all, preproc_all, is_test)
+
   
     #TMP
-    for key, val in writeout_dict.items():
-        pred1 = np.argwhere(val == 1.0).reshape(-1).tolist()
-        print(pred1)
+    #for key, val in writeout_dict.items():
+        #pred1 = np.argwhere(val == 1.0).reshape(-1).tolist()
+        #print(pred1)
     
     # Write prediction into csv file
     if is_test and args.write_outputs:

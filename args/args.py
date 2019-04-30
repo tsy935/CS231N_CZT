@@ -91,11 +91,11 @@ def get_args():
                         type=str,
                         default='test',
                         choices=('train','dev','test'),
-                        help='Split used for testing. Prediction results will be written to csv file.')  
-    parser.add_argument('--pred_thresh',
-                        type=float,
-                        default=0.5,
-                        help='Threshold for predicted probability to get final prediction.')
+                        help='Split used for testing. Prediction results will be written to csv file.') 
+    parser.add_argument('--best_val_results',
+                        type=str,
+                        default=None,
+                        help='Saved best validation set results.')
     parser.add_argument('--metric_avg',
                         type=str,
                         default='samples',
@@ -104,6 +104,10 @@ def get_args():
                         type=bool,
                         default=True,
                         help='Whether write prediction to a csv file.')
+    parser.add_argument('--max_grad_norm',
+                        type=float,
+                        default=5.0,
+                        help='Maximum gradient norm for gradient clipping.')
     
     args = parser.parse_args()  
     
@@ -116,6 +120,12 @@ def get_args():
         args.maximize_metric = True
     else:
         raise ValueError('Unrecognized metric name: "{}"'.format(args.metric_name))
+        
+    if (not args.do_train) and (not args.do_predict):
+        raise ValueError('At least one of do_train or do_predict must be true.')
+    
+    if (not args.do_train) and (args.load_path is None or args.best_val_results is None):
+        raise ValueError('For prediction only, please provide path to trained model and best_val_results.')
         
   
     return args        

@@ -17,24 +17,32 @@ class ResNet50(nn.Module):
         
         if args.use_pretrained:
             self.resnet50 = vision.models.resnet50(pretrained=True)
+            #self.resnet50 = vision.models.densenet121(pretrained=True)
         else:
             self.resnet50 = vision.models.resnet50(pretrained=False)
             self.resnet50.load_state_dict(torch.load(args.load_path))
         
         if args.feature_extracting:
             self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)
-            self.resnet50.classifier = Classifier()
+            num_ftrs = self.resnet50.fc.in_features
+            #self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+            self.resnet50.fc = MultiLayerPerceptron(num_ftrs)
+            
+            # TEMP: densenet121
+            #num_ftrs = self.resnet50.classifier.in_features
+            #self.resnet50.classifier = MultiLayerPerceptron(num_ftrs)
+            
         else:
+            print('Fine-tune ResNet50 with {} layers freezed...'.format(args.nlayers_to_freeze))
             self.set_parameter_requires_grad(self.resnet50, 
                                              feature_extracting=False,
                                              nlayers_to_freeze=args.nlayers_to_freeze)
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
         
-        self.sigmoid = nn.Sigmoid()
         
     def forward(self, x):
-        return self.sigmoid(self.resnet50(x))
+        return self.resnet50(x)
     
     def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
         # freeze some layers
@@ -54,15 +62,15 @@ class ResNet50(nn.Module):
 
 # NOT USED
 class MultiLayerPerceptron(nn.Module):
-    def __init__(self):
+    def __init__(self, num_ftrs):
         super(MultiLayerPerceptron, self).__init__()
-        self.linear1 = nn.Linear(1024, 1024)
+        self.linear1 = nn.Linear(num_ftrs, num_ftrs)
         self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(1024, 1103)
         self.dropout = nn.Dropout(0.5)
-        self.sigmoid = nn.Sigmoid()
+        self.linear2 = nn.Linear(num_ftrs, NUM_CLASSES)
+        #self.sigmoid = nn.Sigmoid()
         
     def forward(self, x):
         x = self.relu(self.linear1(x))
         x = self.dropout(x)
-        return self.sigmoid(self.linear2(x))
+        return self.linear2(x)
