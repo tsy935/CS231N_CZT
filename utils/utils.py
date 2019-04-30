@@ -2,18 +2,21 @@ import time
 import random
 import os
 import logging
-import tqdm
 import queue
 import shutil
-
+import tqdm
+import pickle
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pandas as pd
 
 from contextlib import contextmanager
 from collections import defaultdict
 from sklearn.metrics import fbeta_score, f1_score, recall_score, precision_score
+from constants.constants import NUM_CLASSES
+
 
 @contextmanager
 def timer(name="Main", logger=None):
@@ -150,7 +153,7 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     return model
 
 
-def eval_dict(y_pred, labels, thresh, average, orig_id_all, preproc_all, is_test=False):
+def eval_dict(y_pred, labels, average, orig_id_all, preproc_all, is_test=False, thresh_search=False, thresh=None):
     """Helper function to compute evaluation metrics: F1 & F2 scores
     Args:
         y_pred: Predicted probabilities of all preprocessed images
@@ -160,52 +163,97 @@ def eval_dict(y_pred, labels, thresh, average, orig_id_all, preproc_all, is_test
         orig_id_all: List of original ids, order corresponding to y_pred and labels
         preproc_all: List of preprocessing method, "resized" or "crop", order corresponding to y_pred and labels
         is_test: True if no labels are available, only output writeout_dict
-    """
+    """   
     scores_dict = {}
     writeout_dict = defaultdict(list)
     
-    # Combine predictions of image patches from the same image
-    # Use labels from 'resized' as ground truth because these are the original labels
-#    pred_dict = defaultdict(list)
-#    label_dict = defaultdict(list)
+    y_pred = np.concatenate(y_pred, axis=0)
+    labels = np.concatenate(labels, axis=0)
+    
+    # threshold search
+    if thresh_search:
+        thresh, _ = threshold_search(y_pred, labels, average)
+    else:
+        if thresh is None:
+            thresh = 0.5
+        
     y_pred_labels = []
     y_labels = []
     for idx, orig_id in enumerate(orig_id_all):
-        print(y_pred[idx])
         curr_pred = (y_pred[idx] > thresh).astype(int)
         writeout_dict[orig_id] = curr_pred
         y_pred_labels.append(curr_pred)
         y_labels.append(labels[idx])
-    y_pred_labels = np.concatenate(y_pred_labels, axis=0)
-    y_labels = np.concatenate(y_labels, axis=0)
-    print('y_labels shape:{}'.format(y_labels.shape))
-    print('y_pred_labels shape:{}'.format(y_pred_labels.shape))
-        
-#        
-#        pred_dict[orig_id].append(y_pred[idx])
-#        if not is_test:
-#            label_dict[orig_id] = labels[idx]
-#            
-#    # Average predictions from all preprocessed images for the same image
-#    # Might be slow??
-#    writeout_dict = defaultdict(list)
-#    for key in pred_dict.keys():
-#        curr_pred = np.mean(pred_dict[key], axis=1)
-#        y_pred_mean.append(curr_pred)
-#        writeout_dict[key] = (curr_pred > thresh).astype(int)
-#        if not is_test:
-#            y.append(label_dict[key])
+    y_pred_labels = np.asarray(y_pred_labels)
+    y_labels = np.asarray(y_labels)
         
     if not is_test:
-        scores_dict['F2'] = fbeta_score(y_labels, y_pred_labels, beta=2, average=average)
-        scores_dict['F1'] = f1_score(y_labels, y_pred_labels, average=average)
-        scores_dict['recall'] = recall_score(y_labels, y_pred_labels, average=average)
-        scores_dict['precision'] = precision_score(y_labels, y_pred_labels, average=average)
-        return scores_dict, writeout_dict
+        scores_dict['F2'] = fbeta_score(y_true=y_labels, y_pred=y_pred_labels, beta=2, average=average)
+        scores_dict['F1'] = f1_score(y_true=y_labels, y_pred=y_pred_labels, average=average)
+        scores_dict['recall'] = recall_score(y_true=y_labels, y_pred=y_pred_labels, average=average)
+        scores_dict['precision'] = precision_score(y_true=y_labels, y_pred=y_pred_labels, average=average)
+        return scores_dict, writeout_dict, thresh
     else:
         return writeout_dict
-        
 
+    
+def threshold_search(y_pred, y_true, average):
+    """
+        Adapted from https://www.kaggle.com/hidehisaarai1213/imet-pytorch-starter
+    """
+    score = []
+    candidates = list(np.arange(0, 0.5, 0.01))
+    for _, th in enumerate(candidates):
+        yp = (y_pred > th).astype(int)
+        score.append(fbeta_score(y_true=y_true, y_pred=yp, beta=2, average=average))
+    score = np.array(score)
+    pm = score.argmax()
+    best_th, best_score = candidates[pm], score[pm]
+    return best_th, best_score
+
+
+def my_f2(y_true, y_pred, beta=2.):
+    """
+        Compute F2 score, adpated from https://www.kaggle.com/mathormad/resnet50-v2-keras-focal-loss-mix-up
+    """
+    EPSILON = 1e-7
+    assert y_true.shape[0] == y_pred.shape[0]
+
+    tp = np.sum((y_true == 1) & (y_pred == 1), axis=1)
+    tn = np.sum((y_true == 0) & (y_pred == 0), axis=1)
+    fp = np.sum((y_true == 0) & (y_pred == 1), axis=1)
+    fn = np.sum((y_true == 1) & (y_pred == 0), axis=1)
+
+    p = tp / (tp + fp + EPSILON)
+    r = tp / (tp + fn + EPSILON)
+
+    f2 = (1+beta**2)*p*r / (p*beta**2 + r + 1e-15)
+
+    return np.mean(f2)
+
+
+# NOT USED
+def comp_pos_weights(csv_file):
+    """
+        Helper function to compute the positive weights to be used in BCELoss/BCEWithLogitsLoss
+    """
+    df = pd.read_csv(csv_file, engine='python')
+    label_onehot = np.zeros((len(df), NUM_CLASSES), dtype=int)
+    for idx, attr_arr in enumerate(df.attribute_ids.str.split(" ").apply(lambda l: list(map(int, l))).values):
+        label_onehot[idx, attr_arr] = 1
+        
+    frequencies = label_onehot.sum(axis=0)
+    
+    pos_weights = []
+    for i, freq in enumerate(frequencies):
+        if freq != 0.:
+            pos_weights.append((len(df)-freq) / freq) # positive weight = (num of negative) / (num of positive)
+        else: # for removed classes, just set pos_weights to 0
+            pos_weights.append(1.)
+            
+    #print('pos_weights:{}'.format(pos_weights))
+    return pos_weights
+   
     
 class CheckpointSaver:
     """Class to save and load model checkpoints.
@@ -257,7 +305,7 @@ class CheckpointSaver:
         if self.log is not None:
             self.log.info(message)
 
-    def save(self, step, model, metric_val, device):
+    def save(self, step, model, metric_val, device, val_results):
         """Save model parameters to disk.
         Args:
             step (int): Total number of examples seen during training so far.
@@ -283,6 +331,9 @@ class CheckpointSaver:
             self.best_val = metric_val
             best_path = os.path.join(self.save_dir, 'best.pth.tar')
             shutil.copy(checkpoint_path, best_path)
+            best_val_results = os.path.join(self.save_dir, 'best_val_results')
+            with open(best_val_results,'wb') as f:
+                pickle.dump(val_results,f)
             self._print('New best checkpoint at step {}...'.format(step))
 
         # Add checkpoint path to priority queue (lowest priority removed first)
