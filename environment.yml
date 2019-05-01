@@ -1,0 +1,25 @@
+name: imet
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.7
+  - numpy
+  - pip
+  - spacy=2.0.16
+  - tensorboard
+  - tensorflow
+  - tqdm
+  - tensorboardX
+  - urllib3
+  - pytorch=1.0.0
+  - pip:
+    - torch==1.0.0
+  - boto3
+  - requests
+  - regex
+  - pandas
+  - scikit-learn
+  - torchvision
+  - path
