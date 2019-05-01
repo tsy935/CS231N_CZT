@@ -14,7 +14,7 @@ from data.dataset import IMetDataset
 from args.args import get_args
 from collections import OrderedDict
 from json import dumps
-from models.models import ResNet50, MultiLayerPerceptron
+from models.ResNet import ResNet50
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -94,7 +94,6 @@ def train(args, device, train_save_dir):
     # TODO: add option to use other models
     log.info('Building model...')
     if args.model_name == 'baseline':
-    #    model = MultiLayerPerceptron(1024)
         model = ResNet50(args)
 #    else:
 #        model = CNN_RNN(args)
