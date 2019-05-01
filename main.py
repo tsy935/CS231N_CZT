@@ -38,16 +38,26 @@ def main(args):
     # Set random seed
     utils.seed_torch(seed=SEED)
     
-    # Train
+    # Get save directories
     if args.do_train:
         train_save_dir = utils.get_save_dir(args.save_dir, training=True)
-        train(args, device, train_save_dir)
-        
+    if args.do_predict:
+        test_save_dir = utils.get_save_dir(args.save_dir, training=False)
+    
+    # Save args
+    args.train_save_dir = train_save_dir
+    args.test_save_dir = test_save_dir
+    args_file = os.path.join(train_save_dir, ARGS_FILE_NAME)
+    with open(args_file, 'w') as f:
+         json.dump(vars(args), f, indent=4, sort_keys=True)
+    
+    # Train
+    if args.do_train:
+        train(args, device, train_save_dir)      
         
     # Predict
     # TODO: add option to use other models
     if args.do_predict:
-        test_save_dir = utils.get_save_dir(args.save_dir, training=False)
         if args.model_name == 'baseline':
             model = ResNet50(args)
 #        else:
@@ -74,14 +84,6 @@ def main(args):
         results_str = ', '.join('{}: {:05.2f}'.format(k, v)
                                 for k, v in results.items())
         print('{} prediction results: {}'.format(args.split, results_str))
-        
-    # save args
-    args.train_save_dir = train_save_dir
-    args.test_save_dir = test_save_dir
-    args_file = os.path.join(train_save_dir, ARGS_FILE_NAME)
-    with open(args_file, 'w') as f:
-         json.dump(vars(args), f, indent=4, sort_keys=True)
-        
         
 
 def train(args, device, train_save_dir):

@@ -8,12 +8,12 @@ def get_args():
                         default=None,
                         help='Directory to save the outputs and checkpoints.')
     parser.add_argument('--do_train',
-                        type=bool,
                         default=True,
+                        action='store_true',
                         help='To train the model.')
     parser.add_argument('--use_pretrained',
-                        type=bool,
                         default=True,
+                        action='store_true',
                         help='Whether to use pre-trained model.')
     parser.add_argument('--model_name',
                         type=str,
@@ -33,8 +33,8 @@ def get_args():
                         default=30,
                         help='Number of epochs for which to train.')
     parser.add_argument('--feature_extracting',
-                        type=bool,
                         default=False,
+                        action='store_true',
                         help='Use pre-trained model as feacture extracting only or not (fine-tune).')
     parser.add_argument('--max_checkpoints',
                         type=int,
@@ -80,8 +80,8 @@ def get_args():
                         default=None,
                         help='Number of early layers to freeze.')
     parser.add_argument('--do_predict',
-                        type=bool,
                         default=True,
+                        action='store_true',
                         help='To evaluate the model.')
     parser.add_argument('--test_batch_size',
                         type=int,
@@ -101,8 +101,8 @@ def get_args():
                         default='samples',
                         help='Averaing method to compute evaluation metrics.')
     parser.add_argument('--write_outputs',
-                        type=bool,
                         default=True,
+                        action='store_true',
                         help='Whether write prediction to a csv file.')
     parser.add_argument('--max_grad_norm',
                         type=float,
