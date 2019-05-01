@@ -25,6 +25,17 @@ Welcome to CS231N project playground!
 ## Output
 * Please save all experimental results in `/mnt/disks/large/output`
 
+## Code
+### Environment
+* The environment is defined in `./environment.yml` (called imet), and has been setup in VM `cs231n1-vm`. To activate the environment, run the following on terminal:
+```
+conda activate imet
+```
+To deactivate, run the following:
+```
+conda deactivate imet
+```
+
 ## Housekeeping
 * Always work on your own branch. Use the following command to create a new branch:
 ```
@@ -68,3 +79,14 @@ jupyter notebook
 ```
 
 Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n, http:34.83.253.121:8800 for Siyi, http:34.83.253.121:8899 for Mingkun 
+
+## Tensorboard
+During training, some results such as train/dev loss, train LR, val F2, val F1 etc. will be recorded in an event file. You may view these results using Tensorboard. To use Tensorboard, go to the parent folder of our code, i.e. `CS231N_CZT`, then run the following command:
+```
+tensorboard --logdir [dir-to-the-folder-of-output-event-file] --port [port-number]
+```
+Next, on your local machine, run the following command:
+```
+ssh -N -f -L localhost:1234:localhost:[port-number] <user>@<remote>
+```
+Now, open http://localhost:1234/ in the browswer on your local machine, you should be able to see the Tensorboard.
