@@ -75,10 +75,10 @@ Jupyter notebook has been already setup.
 To launch notebook, Run
 
 ```
-jupyter notebook
+jupyter notebook --no-browser --port xxxx
 ```
 
-Then you can launch the notebook in browser at http://34.83.253.121:8888 with password cs231n, http:34.83.253.121:8800 for Siyi, http:34.83.253.121:8899 for Mingkun 
+Then you can launch the notebook in browser at http://external IP address:xxxx with password cs231n where xxxx is a port number that is not taken and in 7000-9000 range. 
 
 ## Tensorboard
 During training, some results such as train/dev loss, train LR, val F2, val F1 etc. will be recorded in an event file. You may view these results using Tensorboard. To use Tensorboard, go to the parent folder of our code, i.e. `CS231N_CZT`, then run the following command:
