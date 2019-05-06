@@ -66,6 +66,10 @@ def get_args():
                         default='resize_crop',
                         choices=('resize_only','crop_only','resize_crop'),
                         help='Data preprocessing step to be used for evaluation.')
+    parser.add_argument('--max_pos_weight',
+                        type=float,
+                        default=100.,
+                        help='Maximum value for pos_weights to weight the imbalanced classes in loss function.')
     parser.add_argument('--loss_fn_name',
                         type=str,
                         default='BCE',
