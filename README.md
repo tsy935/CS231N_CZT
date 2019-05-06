@@ -87,6 +87,7 @@ tensorboard --logdir [dir-to-the-folder-of-output-event-file] --port [port-numbe
 ```
 Next, on your local machine, run the following command:
 ```
-ssh -N -f -L localhost:1234:localhost:[port-number] <user>@<remote>
+gcloud compute --project "cs231n-237922" ssh --zone "us-west1-b" "[VM-name]" -- -NfL [port-number]:localhost:[port-number]
 ```
-Now, open http://localhost:1234/ in the browswer on your local machine, you should be able to see the Tensorboard.
+where `[VM-name]` is `cs231n1-vm-2`, `cs231n1-vm` etc.
+Now, open `http://localhost:[port-number]/` in the browswer on your local machine, you should be able to see the Tensorboard.
