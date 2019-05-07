@@ -233,7 +233,7 @@ def my_f2(y_true, y_pred, beta=2.):
 
 
 # NOT USED
-def comp_pos_weights(csv_file):
+def comp_pos_weights(csv_file, max_pos_weight):
     """
         Helper function to compute the positive weights to be used in BCELoss/BCEWithLogitsLoss
     """
@@ -250,8 +250,9 @@ def comp_pos_weights(csv_file):
             pos_weights.append((len(df)-freq) / freq) # positive weight = (num of negative) / (num of positive)
         else: # for removed classes, just set pos_weights to 1
             pos_weights.append(1.)
-            
-    #print('pos_weights:{}'.format(pos_weights))
+    
+    pos_weights = np.asarray(pos_weights)
+    pos_weights = np.clip(pos_weights, a_min=None, a_max=max_pos_weight) # clip the maximum
     return pos_weights
    
     

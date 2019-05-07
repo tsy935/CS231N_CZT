@@ -124,9 +124,9 @@ def train(args, device, train_save_dir):
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs)
     
     # Define loss function
-    pos_weights = utils.comp_pos_weights(TRAIN_CSV)
+    pos_weights = utils.comp_pos_weights(TRAIN_CSV, args.max_pos_weight)
     if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCEWithLogitsLoss(reduction='mean').to(device) # more stable than BCELoss
+        loss_fn = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.tensor(pos_weights, dtype=torch.float)).to(device) # more stable than BCELoss
     else:
         loss_fn = utils.FocalLoss(gamma=args.gamma)
 
@@ -247,9 +247,9 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     nll_meter = utils.AverageMeter()
     
     # loss function
-    pos_weights = utils.comp_pos_weights(TRAIN_CSV)
+    pos_weights = utils.comp_pos_weights(csv_file, args.max_pos_weight)
     if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCEWithLogitsLoss(reduction='mean').to(device)
+        loss_fn = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.tensor(pos_weights, dtype=torch.float)).to(device)
     else:
         loss_fn = utils.FocalLoss(gamma=args.gamma)
     

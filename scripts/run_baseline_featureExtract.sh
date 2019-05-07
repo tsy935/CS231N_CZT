@@ -17,4 +17,5 @@ python ./main.py \
   --eval_steps 5000 \
   --feature_extracting \
   --metric_avg samples \
+  --max_pos_weight 10 \
   --save_dir /mnt/disks/large/output/baseline_featureExtract
