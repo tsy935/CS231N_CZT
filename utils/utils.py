@@ -11,11 +11,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pandas as pd
+import skimage.transform
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 from contextlib import contextmanager
 from collections import defaultdict
 from sklearn.metrics import fbeta_score, f1_score, recall_score, precision_score
 from constants.constants import NUM_CLASSES
+
 
 
 @contextmanager
@@ -153,14 +157,13 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     return model
 
 
-def eval_dict(y_pred, labels, average, orig_id_all, preproc_all, is_test=False, thresh_search=False, thresh=None, is_hard_label=False):
+def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search=False, thresh=None, is_hard_label=False):
     """Helper function to compute evaluation metrics: F1 & F2 scores
     Args:
         y_pred: Predicted probabilities of all preprocessed images
         labels: Labels of all preprocessed images
         average: "samples", "macro", "micro" etc. for computing F1 and F2 scores
         orig_id_all: List of original ids, order corresponding to y_pred and labels
-        preproc_all: List of preprocessing method, "resized" or "crop", order corresponding to y_pred and labels
         is_test: True if no labels are available, only output writeout_dict
         thresh_search: Whether to do threshold search
         thresh: Threshold to be used for binarizing the prediction results
@@ -243,7 +246,6 @@ def my_f2(y_true, y_pred, beta=2.):
     return np.mean(f2)
 
 
-# NOT USED
 def comp_pos_weights(csv_file, max_pos_weight):
     """
         Helper function to compute the positive weights to be used in BCELoss/BCEWithLogitsLoss
@@ -265,7 +267,37 @@ def comp_pos_weights(csv_file, max_pos_weight):
     pos_weights = np.asarray(pos_weights)
     pos_weights = np.clip(pos_weights, a_min=None, a_max=max_pos_weight) # clip the maximum
     return pos_weights
-   
+
+
+def visualize_attn(img, alphas, labels):
+    """
+    Visualize attention
+    Adapted from https://github.com/kelvinxu/arctic-captions/blob/master/alpha_visualization.ipynb
+    Args:
+        img: image numpy array to be visualized, (C, H, W)
+        alphas: alphas (attention) numpy array, (max_label_len, num_pixels)
+        labels: predicted/true labels of the image, one-hot encoded, (NUM_CLASSES,)
+    """
+    labels_num = np.argmax(labels, axis=1)
+    labs = labels_num[labels_num != 0]
+    
+    H, W = img.shape[1], img.shape[2]
+    
+    for t in range(len(labs)):
+        plt.subplot(np.ceil(len(labs) / 5.), 5, t + 1)
+        
+        plt.text(0, 1, '%s' % (labs[t]), color='black', backgroundcolor='white', fontsize=12)
+        plt.imshow(img)
+        current_alpha = alphas[t,:]
+        
+        alpha = skimage.transform.resize(current_alpha, [H, W])
+        if t == 0:
+            plt.imshow(alpha, alpha=0)
+        else:
+            plt.imshow(alpha, alpha=0.8)
+        plt.set_cmap(cm.Greys_r)
+        plt.axis('off')
+    plt.show()
     
 class CheckpointSaver:
     """Class to save and load model checkpoints.

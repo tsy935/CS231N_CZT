@@ -79,7 +79,7 @@ def main(args):
             best_thresh = val_results['best_thresh']
          
         model.to(device)
-        results, alphas = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
+        results, vis_dict = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
         
         # Log to console
         results_str = ', '.join('{}: {:05.2f}'.format(k, v)
@@ -90,9 +90,11 @@ def main(args):
         test_results_dir = os.path.join(test_save_dir, 'test_results')
         with open(test_results_dir, 'wb') as f:
             pickle.dump(f, results)
-        test_alphas_dir = os.path.join(test_save_dir, 'test_alphas')
-        with open(test_alphas_dir, 'wb') as f:
-            pickle.dump(f, alphas) 
+            
+        if args.model_name == 'cnn-rnn':
+            test_alphas_dir = os.path.join(test_save_dir, 'test_visualization')
+            with open(test_alphas_dir, 'wb') as f:
+                pickle.dump(f, vis_dict) 
             
         
 
@@ -310,7 +312,13 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 
             # Log info
             progress_bar.update(batch_size)
-            
+        
+        # Save last batch alphas and images for visualization
+        vis_dict = {}
+        if args.model_name == 'cnn-rnn':           
+            vis_dict['imgs'] = imgs.cpu().numpy()
+            vis_dict['alphas'] = alphas.cpu().numpy()     
+            vis_dict['labels_pred'] = y_pred.cpu().numpy()
                  
     
     # if label is available
@@ -322,7 +330,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
             thresh_search = False
             thresh = best_thresh
         scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
-                                                     orig_id_all, preproc_all, is_test=False, 
+                                                     orig_id_all, is_test=False, 
                                                      thresh_search=thresh_search, thresh=thresh, 
                                                      is_hard_label=is_hard_label)
         results_list = [('Loss', nll_meter.avg),
@@ -353,7 +361,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         df_out.to_csv(out_file_name, index=False)
         print('Prediction written to {}!'.format(out_file_name))        
             
-    return results, alphas
+    return results, vis_dict
 
 
 
