@@ -97,8 +97,8 @@ def train(args, device, train_save_dir):
     log.info('Building model...')
     if args.model_name == 'baseline':
         model = ResNet50(args)
-#    else:
-#        model = CNN_RNN(args)
+    elif args.model_name == "baseline_hog":
+        model = ResNet50_HOGFC(args)
         
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
