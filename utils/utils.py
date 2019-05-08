@@ -153,17 +153,23 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     return model
 
 
-def eval_dict(y_pred, labels, average, orig_id_all, preproc_all, is_test=False, thresh_search=False, thresh=None):
+def eval_dict(y_pred, labels, average, orig_id_all, preproc_all, is_test=False, thresh_search=False, thresh=None, is_hard_label=False):
     """Helper function to compute evaluation metrics: F1 & F2 scores
     Args:
         y_pred: Predicted probabilities of all preprocessed images
         labels: Labels of all preprocessed images
-        thresh: Threshold to be used for binarizing the prediction results
         average: "samples", "macro", "micro" etc. for computing F1 and F2 scores
         orig_id_all: List of original ids, order corresponding to y_pred and labels
         preproc_all: List of preprocessing method, "resized" or "crop", order corresponding to y_pred and labels
         is_test: True if no labels are available, only output writeout_dict
+        thresh_search: Whether to do threshold search
+        thresh: Threshold to be used for binarizing the prediction results
+        is_hard_label: Whether y_pre is hard labels or soft probabilities
     """   
+    
+    if thresh_search and is_hard_label:
+        raise ValueError('y_pred are hard labels, cannot do threshold search.')
+    
     scores_dict = {}
     writeout_dict = defaultdict(list)
     
@@ -171,21 +177,26 @@ def eval_dict(y_pred, labels, average, orig_id_all, preproc_all, is_test=False, 
     labels = np.concatenate(labels, axis=0)
     
     # threshold search
-    if thresh_search:
-        thresh, _ = threshold_search(y_pred, labels, average)
-    else:
-        if thresh is None:
-            thresh = 0.5
+    if not is_hard_label:
+        if thresh_search:
+            thresh, _ = threshold_search(y_pred, labels, average)
+        else:
+            if thresh is None:
+                thresh = 0.5
         
-    y_pred_labels = []
-    y_labels = []
-    for idx, orig_id in enumerate(orig_id_all):
-        curr_pred = (y_pred[idx] > thresh).astype(int)
-        writeout_dict[orig_id] = curr_pred
-        y_pred_labels.append(curr_pred)
-        y_labels.append(labels[idx])
-    y_pred_labels = np.asarray(y_pred_labels)
-    y_labels = np.asarray(y_labels)
+        y_pred_labels = []
+        y_labels = []
+        for idx, orig_id in enumerate(orig_id_all):
+            curr_pred = (y_pred[idx] > thresh).astype(int)
+            writeout_dict[orig_id] = curr_pred
+            y_pred_labels.append(curr_pred)
+            y_labels.append(labels[idx])
+        
+        y_pred_labels = np.asarray(y_pred_labels)
+        y_labels = np.asarray(y_labels)
+    else:
+        y_pred_labels = y_pred
+        y_labels = labels
         
     if not is_test:
         scores_dict['F2'] = fbeta_score(y_true=y_labels, y_pred=y_pred_labels, beta=2, average=average)
