@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision as vision
 import numpy as np
-from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM
+from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN
 
 class EncoderCNN(nn.Module):
     """
@@ -53,6 +53,21 @@ class EncoderCNN(nn.Module):
         v_feat = v_feat.permute(0, 2, 3, 1) # (batch_size, encoded_image_size, encoded_image_size, 2048)
         return v_prob, v_feat
     
+    def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
+        # freeze some layers
+        if nlayers_to_freeze is not None:
+            ct = 0
+            for name, child in model.named_children():
+                ct += 1
+                if ct < nlayers_to_freeze:
+                    for name2, params in child.named_parameters():
+                        params.requires_grad = False
+        else:
+            # if feature extracting, freeze all layers
+            if feature_extracting: 
+                for param in model.parameters():
+                    param.requires_grad = False
+    
 
 class Attn(nn.Module):
     """
@@ -72,8 +87,7 @@ class Attn(nn.Module):
         att2 = self.decoder_att(decoder_hidden)
         att = self.full_att(self.relu(att1 + att2.unsqueeze(1))).squeeze(2)
         alpha = self.softmax(att)
-        z = (encoder_out * alpha.unsqueeze(2)).sum(dim=1)
-        print('shape of z:{}'.format(z.size()))
+        z = (encoder_out * alpha.unsqueeze(2)).sum(dim=1) # (batch_size, encoder_dim) e.g. (96, 2048)
         return z, alpha
 
         
@@ -90,7 +104,7 @@ class AttnDecoderRNN(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         
         # Decoder / prediction layer
-        self.decode_step = nn.LSTMCell(NUM_CLASSES * 3, decoder_dim, bias=True)
+        self.decode_step = nn.LSTMCell(NUM_CLASSES * 2 + encoder_dim, decoder_dim, bias=True)
         self.init_h = nn.Linear(encoder_dim, decoder_dim)
         self.init_c = nn.Linear(encoder_dim, decoder_dim)
         self.f_beta = nn.Linear(decoder_dim, encoder_dim) # linear layer to create a sigmoid-activated gate
@@ -114,7 +128,7 @@ class AttnDecoderRNN(nn.Module):
         c = self.init_c(mean_encoder_out)
         return h, c
 
-    def forward(self, v_prob, v_feat, device, max_label_len=10, prob_path_thresh=1e-6, loss_fn=None, labels=None, is_test=False):
+    def forward(self, v_prob, v_feat, device, max_label_len=10, prob_path_thresh=1e-6, loss_fn=None, labels=None, is_eval=False):
         """
         Forward function for training only.
         Args:
@@ -123,14 +137,14 @@ class AttnDecoderRNN(nn.Module):
             device: device
             max_label_len: maximum label length in train split
             prob_path_thresh: prediction path probability threshold to terminate test prediction
-            labels: one-hot encoded ground truth labels, (batch_size, NUM_CLASSES)
+            labels: one-hot encoded ground truth labels, (batch_size, ncrops, NUM_CLASSES)
         """
         batch_size = v_feat.size(0)
         encoder_dim = v_feat.size(-1)
-
+        
         v_feat = v_feat.view(batch_size, -1, encoder_dim) # (batch_size, num_pixels, encoder_dim)
         num_pixels = v_feat.size(1)
-        
+                
         # Initialize LSTM state
         h, c = self.init_hidden_state(v_feat)  # (batch_size, decoder_dim)
         
@@ -138,45 +152,45 @@ class AttnDecoderRNN(nn.Module):
         v_pred = v_prob # (batch_size, NUM_CLASSES)
         
         # Initialize candidate pool
-        C = np.tile(np.arange(0,NUM_CLASSES), (batch_size, 1)) # (batch_size, NUM_CLASSES)
+        #C = np.tile(np.arange(0,NUM_CLASSES), (batch_size, 1)) # (batch_size, NUM_CLASSES)
+        C = np.ones((batch_size, NUM_CLASSES)) # (batch_size, NUM_CLASSES)
         
-        # TODO: Check if y_tilt size is correct??
         y_tilt = torch.zeros(batch_size, NUM_CLASSES).to(device)
-        y_tilt_num = torch.zeros(batch_size, max_label_len).to(device)
-        alphas = torch.zeros(batch_size, max_label_len, num_pixels).to(device) # for visualization purpose
-        
-        loss = 0.
-        hard_labels = torch.zeros(batch_size, max_label_len).to(device)
-        soft_probs = np.zeros(batch_size, max_label_len).to(device)
+        y_tilt_num = np.zeros((batch_size, max_label_len))
+        alphas = np.zeros((batch_size, max_label_len, num_pixels)) # for visualization purpose
+        hard_labels = np.zeros((batch_size, max_label_len))
+        soft_probs = np.zeros((batch_size, max_label_len))
+        loss = 0.    
         for t in range(max_label_len):
             # Pass through attention layer
             z, alpha = self.attn(v_feat, h)
             gate = self.sigmoid(self.f_beta(h))
             z = gate * z
-            
+         
             # Pass through prediction layer
             h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
             fc1_out = self.fc1(self.dropout(h))
             logit = self.fc2(self.dropout(fc1_out)) # (batch_size, NUM_CLASSES)
-            probs = self.sigmoid(logit)            
-            alphas[:,t,:] = alpha
+            probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)            
+            alphas[:,t,:] = alpha.detach().cpu().numpy()
             
-            # Only choose from the candidate pool
-            p_C = probs[:,C].numpy()
-            curr_idx = np.argmax(p_C, axis=1) # (batch_size,)
-            prob_max = p_C[:,curr_idx] # (batch_size,)
-            l = C[curr_idx] # current time step hard prediction
-            y_tilt[:,int(l)] = 1 # add current time step hard prediction
+            # Only choose from the candidate pool to prevent duplicated labels
+            ps = probs.detach().cpu().numpy() # (batch_size, NUM_CLASSES)
+            ps *= C # mask the probabilities with the candidate pool
+            l = np.argmax(ps, axis=1) # current time step hard label, shape (batch_size,)
+            
+            prob_max = np.asarray([ps[idx,l[idx]] for idx in range(batch_size)])
+            y_tilt[:,l] = 1 # add current time step hard prediction
             y_tilt_num[:,t] = l
-            C = np.delete(C, curr_idx.view(-1,1), axis=1) # remove newly predicted label from candidate pool  
+            C[:,l] = 0. # remove newly predicted label from candidate pool
             
             soft_probs[:,t] = prob_max
             
-            if labels is not None:
+            if labels is not None and loss_fn is not None:
                 # Loss sum over all time steps
                 # Note that in the original paper, it performs GD at each time step
                 # TODO: Can also try SGD at each time step
-                loss += self.loss_fn(logit, labels)
+                loss += loss_fn(logit, labels.view(-1, NUM_CLASSES))
             
             v_pred = probs
         
@@ -187,19 +201,20 @@ class AttnDecoderRNN(nn.Module):
             
         
         # If test, discard labels after the time step when path probability is lower than the threshold
-        if is_test:
+        if is_eval:
             prob_path = np.ones(batch_size, max_label_len)
             hard_labels = np.zeros(batch_size, NUM_CLASSES)
             for t in range(max_label_len):
                 prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)
                 
             masks = prob_path >= prob_path_thresh
+            
             masked_alphas = alphas * masks
             for i in range(batch_size):
                 curr_labels = y_tilt_num[i, masks[i,:]]
                 hard_labels[i, int(curr_labels)] = 1
         else:
-            hard_labels = y_tilt
+            hard_labels = y_tilt.detach().cpu().numpy()
             masked_alphas = alphas
         
         return hard_labels, total_loss, masked_alphas
@@ -338,20 +353,20 @@ class CNN_RNN(nn.Module):
     """
         Wrapper class to combine CNN with visual attention RNN
     """
-    def __init__(self, args, device, is_test=False):
+    def __init__(self, args, device, is_eval=False):
         super(CNN_RNN, self).__init__()
         self.args = args
         self.device = device
-        self.is_test = is_test
+        self.is_eval = is_eval
         self.encoder = EncoderCNN(args)
         self.decoder = AttnDecoderRNN(ATTN_DIM, DECODER_DIM, ENCODER_DIM, dropout=args.dropout)
     
     def forward(self, x, labels=None, loss_fn=None):
         v_prob, v_feat = self.encoder(x)
 
-        hard_labels, total_loss, alphas = self.decoder(v_prob, v_feat, self.device, max_label_len=self.args.max_label_len, 
+        hard_labels, total_loss, alphas = self.decoder(v_prob, v_feat, self.device, max_label_len=MAX_LABEL_LEN, 
                                            prob_path_thresh=self.args.prob_path_thresh, loss_fn=loss_fn,
-                                           labels=labels, is_test=self.is_test)
+                                           labels=labels, is_eval=self.is_eval)
         if labels is None:
             return hard_labels, alphas
         else:

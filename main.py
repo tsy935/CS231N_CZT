@@ -22,7 +22,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from path import Path
 
 
-from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED, ARGS_FILE_NAME
+from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED, ARGS_FILE_NAME, NUM_CLASSES
 
 
 def main(args):
@@ -62,7 +62,7 @@ def main(args):
         if args.model_name == 'baseline':
             model = ResNet50(args)
         else:
-            model = CNN_RNN(args, device=device, is_test=True)
+            model = CNN_RNN(args, device=device, is_eval=True)
             
         model = nn.DataParallel(model, args.gpu_ids)
         if not args.do_train: # load from saved model
@@ -116,7 +116,7 @@ def train(args, device, train_save_dir):
     if args.model_name == 'baseline':
         model = ResNet50(args)
     else:
-        model = CNN_RNN(args, device, is_test=False)
+        model = CNN_RNN(args, device, is_eval=False)
         
         
     model = nn.DataParallel(model, args.gpu_ids)
@@ -185,7 +185,9 @@ def train(args, device, train_save_dir):
                     loss = loss_fn(logits, labels) # we use BCEWithLogitsLoss
                     loss_val = loss.item()
                 else:
-                    loss, _, _ = model(imgs.view(-1, C, H, W), labels=labels, loss_fn=loss_fn) # fuse batch size and ncrops
+                    loss, _, _ = model(imgs.view(-1, C, H, W), 
+                                       labels=labels.view(-1, NUM_CLASSES), 
+                                       loss_fn=loss_fn) # fuse batch size and ncrops
                     loss_val = loss.item()
 
                 # Backward
@@ -208,7 +210,7 @@ def train(args, device, train_save_dir):
                 steps_till_eval -= batch_size
                 if steps_till_eval <= 0:
                     steps_till_eval = args.eval_steps
-
+                    
                     # Evaluate and save checkpoint
                     log.info('Evaluating at step {}...'.format(step))
                     eval_results, _ = evaluate(model,                                            
@@ -223,7 +225,7 @@ def train(args, device, train_save_dir):
                     model.train()
 
                     # Log to console
-                    results_str = ', '.join('{}: {:05.2f}'.format(k, v)
+                    results_str = ', '.join('{}: {}'.format(k, v)
                                             for k, v in eval_results.items())
                     log.info('Dev {}'.format(results_str))
 
@@ -282,10 +284,8 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 
             # Setup for forward
             imgs = imgs.to(device)
-            if labels is not None:
-                labels = labels[:,0,:].to(device) # shape (batch_size, NUM_CLASSES)
-                #labels = labels.to(device)
-                
+            labels = labels.to(device) # (batch_size, ncrosp, NUM_CLASSES)
+                       
             # Forward
             if args.model_name == 'baseline': 
                 is_hard_label = False # for baseline, y_pred is soft probabilities
@@ -293,6 +293,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
                 y_pred = torch.sigmoid(logits)
                 if labels is not None and (not is_test): # if label is available
+                    labels = labels[:,0,:] # all crops labels are the same
                     loss = loss_fn(logits, labels)
                     nll_meter.update(loss.item(), batch_size)
                     y_true_all.append(labels.cpu().numpy())
@@ -301,13 +302,21 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 is_hard_label = True # for CNN-RNN, y_pred is hard labels
                 if labels is not None and (not is_test):
                     loss, y_pred, alphas = model(imgs.view(-1, C, H, W), labels=labels, loss_fn=loss_fn) # fuse batch size and ncrops
+                    y_pred_crops = y_pred
+                    labels = labels[:,0,:]
+                    # Predicted labels are the union of all crops
+                    y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
+                    y_pred[y_pred > 1] = 1 # (batch_size, NUM_CLASSES)
                     nll_meter.update(loss.item(), batch_size)
                     y_true_all.append(labels.cpu().numpy())
                 else:
                     y_pred, alphas = model(imgs.view(-1, C, H, W), labels=labels, loss_fn=loss_fn)
+                    y_pred_crops = y_pred
+                    # Predicted labels are the union of all crops
+                    y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
+                    y_pred[y_pred > 1] = 1
                 
-            
-            y_pred_all.append(y_pred.cpu().numpy())
+            y_pred_all.append(y_pred)
             orig_id_all.extend(list(orig_id))
                 
             # Log info
@@ -317,13 +326,13 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         vis_dict = {}
         if args.model_name == 'cnn-rnn':           
             vis_dict['imgs'] = imgs.cpu().numpy()
-            vis_dict['alphas'] = alphas.cpu().numpy()     
-            vis_dict['labels_pred'] = y_pred.cpu().numpy()
+            vis_dict['alphas'] = alphas  
+            vis_dict['labels_pred'] = y_pred_crops
                  
     
     # if label is available
     if labels is not None:
-        if is_test == False: # only threshold search on validation set
+        if is_test == False and not(is_hard_label): # only threshold search on validation set
             thresh_search = True
             thresh = None
         else:
@@ -337,14 +346,16 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                         ('F2', scores_dict['F2']),
                         ('F1', scores_dict['F1']),
                         ('recall', scores_dict['recall']),
-                        ('precision', scores_dict['precision']),
-                        ('best_thresh', best_thresh)]
+                        ('precision', scores_dict['precision'])]
+        if best_thresh is not None:
+            results_list['best_thresh'] = best_thresh
             
         results = OrderedDict(results_list)
     else: # if label is not available
         writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
                                         orig_id_all, preproc_all, is_test=True, 
-                                        thresh_search=False, thresh=best_thresh)
+                                        thresh_search=False, thresh=best_thresh,
+                                        is_hard_label=is_hard_label)
         results = {}
 
     

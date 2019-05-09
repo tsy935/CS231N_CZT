@@ -66,6 +66,14 @@ def get_args():
                         default='resize_crop',
                         choices=('resize_only','crop_only','resize_crop'),
                         help='Data preprocessing step to be used for evaluation.')
+    parser.add_argument('--dropout',
+                        type=float,
+                        default=0.5,
+                        help='Dropout probability to be applied in RNN final FC layers.')
+    parser.add_argument('--prob_path_thresh',
+                        type=float,
+                        default=1e-6,
+                        help='Prediction path probability threshold for RNN.')
     parser.add_argument('--max_pos_weight',
                         type=float,
                         default=100.,
