@@ -8,15 +8,15 @@ python ./main.py \
   --split test \
   --use_pretrained \
   --model_name cnn-rnn \
-  --lr_init 8e-4 \
+  --lr_init 1e-3 \
   --l2_wd 1e-5 \
-  --num_epochs 10 \
+  --num_epochs 1 \
   --train_batch_size 32 \
   --loss_fn_name BCE \
   --write_outputs \
-  --eval_steps 500 \
+  --eval_steps 10000 \
   --metric_avg samples \
   --max_pos_weight 10 \
   --feature_extracting \
-  --prob_path_thresh 5e-3 \
+  --prob_path_thresh 3e-3 \
   --save_dir /mnt/disks/large/output/cnnrnn

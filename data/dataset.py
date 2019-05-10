@@ -106,17 +106,17 @@ class IMetDataset(data.Dataset):
             
             #pos_weights = self.compute_pos_weights(label_tensor)
         else: # if label not available
-            label_tensor = None
+            label_tensor = {}
             #pos_weights = None
         
         
         #print('Shape of label_tensor:{}'.format(label_tensor.size()))
-        # None as a place holder for handcrafted feature
+        hogs_feature = {}
         example = (img_tensor,
                    label_tensor,
                    img_id,
                    preproc,
-                   None)
+                   hogs_feature)
         
         return example
         
