@@ -192,7 +192,7 @@ class IMetDataset_HOG(data.Dataset):
         image_idx = image_tensor.size()[0] #size (6, C, H, W)
         hogs = list()
         for i in range(image_idx):
-            image = image_tensor[i] 
+            image = image_tensor[i,:,:,:] 
             winSize = (64,64)
             blockSize = (16,16)
             blockStride = (8,8)
@@ -210,6 +210,7 @@ class IMetDataset_HOG(data.Dataset):
             winStride = (8,8)
             padding = (8,8)
             locations = ((10,20),)
+            # 27*27*36
             hist = hog.compute(image,winStride,padding,locations)
             hogs.append(hist)
             hogs_tensor = torch.stack(hogs, dim=0)
@@ -218,84 +219,6 @@ class IMetDataset_HOG(data.Dataset):
         return hogs_tensor
                    
 
-class IMetDatasetBase_HOG(data.Dataset):
-    """
-        Dataset defined for IMet data, all images are resized, no cropping
-    """
-    def __init__(self, 
-                 root_dir: Path, 
-                 csv_file=None,
-                 mode='train'):
-        self._root = root_dir      
-        self.df = pd.read_csv(csv_file)
-        self._img_id = (self.df['id'] + '.png').values
-        self.mode = mode
-        
-        # if labels available
-        if 'attribute_ids' in self.df:
-            self.labels = self.df.attribute_ids.map(lambda x: x.split()).values
-        else:
-            self.labels = None
-                    
-        # define transformations
-        self.transform_train_rs = self.compose_transforms('train_resize')
-        self.transform_eval_rs = self.compose_transforms('evaluate_resize')
-            
-        
-    def __len__(self):
-        return len(self._img_id)
-    
-    def __getitem__(self, idx):
-        img_id = self._img_id[idx]
-        file_name = self._root / img_id
-        img = Image.open(file_name)
-        if self.labels is not None:
-            label = self.labels[idx]
-        else:
-            label = None
-        
-        # data augmentation
-        if self.mode == 'train':
-            img_tensor = self.transform_train_rs(img) # shape (C, H, W)
-        else:
-            img_tensor = self.transform_eval_rs(img) # shape (C, H, W)
-           
-        # get label
-        if label is not None: # if label is available
-            label_tensor = torch.zeros((NUM_CLASSES))
-            for i in label:
-                label_tensor[int(i)] = 1                                                    
-        else: # if label not available
-            label_tensor = None
-        
-        #print('Shape of img_tensor:{}'.format(img_tensor.size()))
-        #print('Shape of label_tensor:{}'.format(label_tensor.size()))
-        example = (img_tensor,
-                   label_tensor,
-                   img_id,
-                   'resize')
-        
-        return example
-        
-    def compose_transforms(self, transform_method):
-        """
-            For training data, resize/crop to 224x224, random horizontal flip, random color jitter, normalize;
-            For dev/test data, resize/crop to 224x224, normalize.
-        """
-        transforms = {'train_resize': vision.transforms.Compose([
-                                  vision.transforms.RandomResizedCrop(224),
-                                  vision.transforms.RandomHorizontalFlip(),
-                                  vision.transforms.ToTensor(),
-                                  vision.transforms.Normalize(mean=MEAN,std=STD)
-                                  ]),
-                      'evaluate_resize': vision.transforms.Compose([
-                                  vision.transforms.Resize(256),
-                                  vision.transforms.CenterCrop(224),
-                                  vision.transforms.ToTensor(),
-                                  vision.transforms.Normalize(mean=MEAN,std=STD)
-                                  ])}
-        
-        return transforms[transform_method]
 
 
         

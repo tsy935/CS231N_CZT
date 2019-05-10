@@ -14,8 +14,10 @@ from constants.constants import NUM_CLASSES
 #TODO: writes a link to HOG data: aim is the feed HOG into the last FC layer as part of input
 
 class ResNet50_HOGFC(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, hog_features):
         super(ResNet50_HOGFC, self).__init__()
+        
+        self.hog_features = hog_features
         
         if args.use_pretrained:
             self.resnet50 = vision.models.resnet50(pretrained=True)
@@ -41,9 +43,32 @@ class ResNet50_HOGFC(nn.Module):
                                              nlayers_to_freeze=args.nlayers_to_freeze)
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+            
+        # modified input size of the last fc layer. added 27*27*36 which is the vector size using HOG for each image
+            
+        # Remove linear and pool layers
+        modules = list(self.resnet50.children())[:-1]
+        self.conv_features = nn.Sequential(*modules) # all layers until last pool layer
+            
+        self.hogfc = nn.Linear(num_ftrs+27*27*36, NUM_CLASSES)
+        
+        # TODO if one layer fc works, we can run MLP
+            
         
     def forward(self, x):
-        return self.resnet50(x)
+        # intermediate result before fc
+        resnet_features = self.conv_features(x) 
+        # batch size
+        B = resnet_features.shape[0]
+        # flatten resnet_features
+        resnet_features = resnet_features.reshape(B,-1)
+        # concatenate with hog feature
+        features_concat = torch.cat((resnet_features, self.hog_features),dim=1)
+        # fc
+        scores = self.hogfc(features_concat)
+        
+        # TODO if one layer fc works, we can run MLP
+        return scores
     
     def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
         # freeze some layers
