@@ -128,9 +128,119 @@ class AttnDecoderRNN(nn.Module):
         c = self.init_c(mean_encoder_out)
         return h, c
 
-    def forward(self, v_prob, v_feat, device, max_label_len=10, prob_path_thresh=1e-6, loss_fn=None, labels=None, is_eval=False):
+    def forward(self, v_prob, v_feat, device, max_label_len=10, 
+                prob_path_thresh=1e-6, loss_fn=None, labels=None, 
+                is_eval=False, beam_search=False, beam_size=3):
         """
-        Forward function for training only.
+        Args:
+            v_prob: predicted probability from CNN, (batch_size, NUM_CLASSES)
+            v_feat: visual map features extracted from CNN
+            device: device
+            max_label_len: maximum label length in train split
+            prob_path_thresh: prediction path probability threshold to terminate test prediction
+            loss_fn: loss function to compute loss
+            labels: one-hot encoded ground truth labels, (batch_size, ncrops, NUM_CLASSES)
+            beam_search: True if using beam search, for evaluation only (not training)
+        Returns:
+            hard_labels: Predicted hard labels in one-hot, shape (batch_size, NUM_CLASSES)
+            masked_alphas: Alphas (attention) scores, shape (batch_size, max_label_len, 14*14)
+            total_loss: None if labels is none
+        """
+        
+        if is_eval and beam_search:
+            hard_labels, masked_alphas, total_loss = self.beam_search(v_prob, v_feat, 
+                                                                       device, max_label_len=max_label_len,
+                                                                       prob_path_thresh=prob_path_thresh,
+                                                                       labels=labels, beam_size=beam_size)
+            
+        else: 
+            # No beam search
+            batch_size = v_feat.size(0)
+            encoder_dim = v_feat.size(-1)
+        
+            v_feat = v_feat.view(batch_size, -1, encoder_dim) # (batch_size, num_pixels, encoder_dim)
+            num_pixels = v_feat.size(1)
+                
+            # Initialize LSTM state
+            h, c = self.init_hidden_state(v_feat)  # (batch_size, decoder_dim)
+        
+            # Initialize v_pred
+            v_pred = v_prob # (batch_size, NUM_CLASSES)
+        
+            # Initialize candidate pool
+            C = np.ones((batch_size, NUM_CLASSES)) # (batch_size, NUM_CLASSES)
+        
+            y_tilt = torch.zeros(batch_size, NUM_CLASSES).to(device)
+            y_tilt_num = np.zeros((batch_size, max_label_len))
+            alphas = np.zeros((batch_size, max_label_len, num_pixels)) # for visualization purpose
+            hard_labels = np.zeros((batch_size, max_label_len))
+            soft_probs = np.zeros((batch_size, max_label_len))
+            loss = 0.    
+            for t in range(max_label_len):
+                # Pass through attention layer
+                z, alpha = self.attn(v_feat, h)
+                gate = self.sigmoid(self.f_beta(h))
+                z = gate * z
+         
+                # Pass through prediction layer
+                h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
+                fc1_out = self.fc1(self.dropout(h))
+                logit = self.fc2(self.dropout(fc1_out)) # (batch_size, NUM_CLASSES)
+                probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)            
+                alphas[:,t,:] = alpha.detach().cpu().numpy()
+                
+                # Only choose from the candidate pool to prevent duplicated labels
+                ps = probs.detach().cpu().numpy() # (batch_size, NUM_CLASSES)
+                ps *= C # mask the probabilities with the candidate pool
+                l = np.argmax(ps, axis=1) # current time step hard label, shape (batch_size,)
+            
+                prob_max = np.asarray([ps[idx,l[idx]] for idx in range(batch_size)])
+                y_tilt[:,l] = 1 # add current time step hard prediction
+                y_tilt_num[:,t] = l
+                C[:,l] = 0. # remove newly predicted label from candidate pool
+            
+                soft_probs[:,t] = prob_max
+            
+                if labels is not None and loss_fn is not None:
+                    # Loss sum over all time steps
+                    # Note that in the original paper, it performs GD at each time step
+                    # TODO: Can also try SGD at each time step
+                    loss += loss_fn(logit, labels.view(-1, NUM_CLASSES))
+            
+                v_pred = probs
+        
+            if labels is not None:
+                total_loss = loss / max_label_len
+            else:
+                total_loss = None
+            
+        
+            # If test, discard labels after the time step when path probability is lower than the threshold
+            if is_eval:
+                prob_path = np.ones((batch_size, max_label_len))
+                hard_labels = np.zeros((batch_size, NUM_CLASSES))
+                for t in range(max_label_len):
+                    # Compute normalized path probability, so that it is invariant to path length
+                    #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t+1]), axis=1)
+                    prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)**(1/(t+1))
+            
+                print(prob_path)
+                masks = prob_path >= prob_path_thresh
+            
+                masked_alphas = alphas * masks[:,:,np.newaxis]
+                for i in range(batch_size):
+                    curr_labels = y_tilt_num[i, masks[i,:]].astype(int)
+                    hard_labels[i, curr_labels] = 1
+            else:
+                hard_labels = y_tilt.detach().cpu().numpy()
+                masked_alphas = alphas
+        
+        return hard_labels, total_loss, masked_alphas
+
+ 
+    def beam_search(v_prob, v_feat, device, max_label_len=10,
+                    prob_path_thresh=1e-3, labels=None, beam_size=3):
+        """
         Args:
             v_prob: predicted probability from CNN, (batch_size, NUM_CLASSES)
             v_feat: visual map features extracted from CNN
@@ -138,235 +248,42 @@ class AttnDecoderRNN(nn.Module):
             max_label_len: maximum label length in train split
             prob_path_thresh: prediction path probability threshold to terminate test prediction
             labels: one-hot encoded ground truth labels, (batch_size, ncrops, NUM_CLASSES)
+            beam_size: Number of beams to search
+        Returns:
+            hard_labels: Predicted hard labels in one-hot, shape (batch_size, NUM_CLASSES)
+            masked_alphas: Alphas (attention) scores, shape (batch_size, max_label_len, 14*14)
+            total_loss: None if labels is none
         """
-        batch_size = v_feat.size(0)
-        encoder_dim = v_feat.size(-1)
+        # Refer to above non-beam search implementation and 
+        # https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Image-Captioning/blob/master/caption.py
+        # Ideally the beam search should also be operated in batch, otherwise might be too slow
         
-        v_feat = v_feat.view(batch_size, -1, encoder_dim) # (batch_size, num_pixels, encoder_dim)
-        num_pixels = v_feat.size(1)
-                
-        # Initialize LSTM state
-        h, c = self.init_hidden_state(v_feat)  # (batch_size, decoder_dim)
-        
-        # Initialize v_pred
-        v_pred = v_prob # (batch_size, NUM_CLASSES)
-        
-        # Initialize candidate pool
-        #C = np.tile(np.arange(0,NUM_CLASSES), (batch_size, 1)) # (batch_size, NUM_CLASSES)
-        C = np.ones((batch_size, NUM_CLASSES)) # (batch_size, NUM_CLASSES)
-        
-        y_tilt = torch.zeros(batch_size, NUM_CLASSES).to(device)
-        y_tilt_num = np.zeros((batch_size, max_label_len))
-        alphas = np.zeros((batch_size, max_label_len, num_pixels)) # for visualization purpose
-        hard_labels = np.zeros((batch_size, max_label_len))
-        soft_probs = np.zeros((batch_size, max_label_len))
-        loss = 0.    
-        for t in range(max_label_len):
-            # Pass through attention layer
-            z, alpha = self.attn(v_feat, h)
-            gate = self.sigmoid(self.f_beta(h))
-            z = gate * z
-         
-            # Pass through prediction layer
-            h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
-            fc1_out = self.fc1(self.dropout(h))
-            logit = self.fc2(self.dropout(fc1_out)) # (batch_size, NUM_CLASSES)
-            probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)            
-            alphas[:,t,:] = alpha.detach().cpu().numpy()
-            
-            # Only choose from the candidate pool to prevent duplicated labels
-            ps = probs.detach().cpu().numpy() # (batch_size, NUM_CLASSES)
-            ps *= C # mask the probabilities with the candidate pool
-            l = np.argmax(ps, axis=1) # current time step hard label, shape (batch_size,)
-            
-            prob_max = np.asarray([ps[idx,l[idx]] for idx in range(batch_size)])
-            y_tilt[:,l] = 1 # add current time step hard prediction
-            y_tilt_num[:,t] = l
-            C[:,l] = 0. # remove newly predicted label from candidate pool
-            
-            soft_probs[:,t] = prob_max
-            
-            if labels is not None and loss_fn is not None:
-                # Loss sum over all time steps
-                # Note that in the original paper, it performs GD at each time step
-                # TODO: Can also try SGD at each time step
-                loss += loss_fn(logit, labels.view(-1, NUM_CLASSES))
-            
-            v_pred = probs
-        
-        if labels is not None:
-            total_loss = loss / max_label_len
-        else:
-            total_loss = None
-            
-        
-        # If test, discard labels after the time step when path probability is lower than the threshold
-        if is_eval:
-            prob_path = np.ones(batch_size, max_label_len)
-            hard_labels = np.zeros(batch_size, NUM_CLASSES)
-            for t in range(max_label_len):
-                prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)
-                
-            masks = prob_path >= prob_path_thresh
-            
-            masked_alphas = alphas * masks
-            for i in range(batch_size):
-                curr_labels = y_tilt_num[i, masks[i,:]]
-                hard_labels[i, int(curr_labels)] = 1
-        else:
-            hard_labels = y_tilt.detach().cpu().numpy()
-            masked_alphas = alphas
-        
-        return hard_labels, total_loss, masked_alphas
-
- 
-    
-#    def beam_search(self, v_prob, v_feat, device, beam_size=3):
-#        # TODO: finish beam search!!!
-#        """
-#        Function to perform beam search.
-#        Args:
-#            v_prob: predicted probability from CNN for one single example (1, NUM_CLASSES)
-#            v_feat: visual map features extracted from CNN for one single example
-#            device: device
-#            beam_size: size of beam
-#        """
-##        batch_size = v_feat.size(0)
-#        encoder_dim = v_feat.size(-1)
-#        enc_image_size = v_feat.size(1)
-#        
-#        v_feat = v_feat.view(-1, encoder_dim) # (num_pixels, encoder_dim)
-#        num_pixels = v_feat.size(0)
-#        
-#        k = beam_size
-#        
-#        # We'll treat the problem as having a batch size of k
-#        v_feat = v_feat.expand(k, num_pixels, encoder_dim)  # (k, num_pixels, encoder_dim)
-#    
-#        # Tensor to store top k previous words at each step; now they're just label 0's
-#        k_prev_labels = torch.LongTensor([[0]] * k).to(device)  # (k, 1)
-#    
-#        # Tensor to store top k sequences; now they're just label 0's
-#        seqs = k_prev_labels  # (k, 1)
-#    
-#        # Tensor to store top k sequences' scores; now they're just 0
-#        top_k_scores = torch.zeros(k, 1).to(device)  # (k, 1)
-#    
-#        # Tensor to store top k sequences' alphas; now they're just 1s
-#        seqs_alpha = torch.ones(k, 1, enc_image_size, enc_image_size).to(device)  # (k, 1, enc_image_size, enc_image_size)
-#    
-#        # Lists to store completed sequences, their alphas and scores
-#        complete_seqs = list()
-#        complete_seqs_alpha = list()
-#        complete_seqs_scores = list()
-#    
-#        # Initialization
-#        step = 1
-#        h, c = self.init_hidden_state(v_feat)
-#        v_pred = v_prob.expand(k, NUM_CLASSES) # (k, NUM_CLASSES)
-#        C = np.tile(np.arange(0,NUM_CLASSES), (k, 1)) # (k, NUM_CLASSES)
-#        
-#        y_tilt = torch.zeros_like(v_pred).to(device) # (k, NUM_CLASSES)
-#    
-#        # s is a number less than or equal to k, because sequences are removed from this 
-#        # process once they reach stopping conditions
-#        probs = torch.ones_like(v_pred)
-#        while True:    
-#            z, alpha = self.attn(v_feat, h)    
-##            alpha = alpha.view(-1, enc_image_size, enc_image_size)  # (s, enc_image_size, enc_image_size)   
-#            gate = self.sigmoid(self.f_beta(h))
-#            z = gate * z
-#            
-#            h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
-#            fc1_out = self.fc1(h)
-#            logit = self.fc2(self.dropout(fc1_out)) # (s, NUM_CLASSES)
-#            p = self.sigmoid(logit)
-##            probs[:,t,:] = p
-##            alphas[:,t,:] = alpha
-#            v_pred = p
-#            
-#            # Only choose from the candidate pool
-#            p_C = p[:,C].numpy()
-#            curr_idx = np.argmax(p_C, dim=1)
-#            l = C[curr_idx] # current time step hard prediction
-#            y_tilt[:,int(l)] = 1 # add current time step hard prediction
-#            C = np.delete(C, curr_idx) # remove newly predicted label from candidate pool
-#            
-#            # Add 
-#            scores = top_k_scores.expand_as(p) + p  # (s, NUM_CLASSES)
-#   
-#            # For the first step, all k points will have the same scores (since same k previous words, h, c)
-#            if step == 1:
-#                top_k_scores, top_k_words = scores[0].topk(k, 0, True, True)  # (s)
-#            else:
-#                # Unroll and find top scores, and their unrolled indices
-#                top_k_scores, top_k_words = scores.view(-1).topk(k, 0, True, True)  # (s)
-#    
-#            # Convert unrolled indices to actual indices of scores
-#            prev_word_inds = top_k_words / NUM_CLASSES  # (s)
-#            next_word_inds = top_k_words % NUM_CLASSES  # (s)
-#    
-#            # Add new words to sequences, alphas
-#            seqs = torch.cat([seqs[prev_word_inds], next_word_inds.unsqueeze(1)], dim=1)  # (s, step+1)
-#            seqs_alpha = torch.cat([seqs_alpha[prev_word_inds], alpha[prev_word_inds].unsqueeze(1)],
-#                                   dim=1)  # (s, step+1, enc_image_size, enc_image_size)
-#    
-#            # Which sequences hit one of the two termination conditions?
-#            complete_inds = scores < args.beam_search_prob_thresh
-#            
-#            
-#            incomplete_inds = [ind for ind, next_word in enumerate(next_word_inds) if
-#                               next_word != word_map['<end>']]
-#            complete_inds = list(set(range(len(next_word_inds))) - set(incomplete_inds))
-#    
-#            # Set aside complete sequences
-#            if len(complete_inds) > 0:
-#                complete_seqs.extend(seqs[complete_inds].tolist())
-#                complete_seqs_alpha.extend(seqs_alpha[complete_inds].tolist())
-#                complete_seqs_scores.extend(top_k_scores[complete_inds])
-#            k -= len(complete_inds)  # reduce beam length accordingly
-#    
-#            # Proceed with incomplete sequences
-#            if k == 0:
-#                break
-#            seqs = seqs[incomplete_inds]
-#            seqs_alpha = seqs_alpha[incomplete_inds]
-#            h = h[prev_word_inds[incomplete_inds]]
-#            c = c[prev_word_inds[incomplete_inds]]
-#            encoder_out = encoder_out[prev_word_inds[incomplete_inds]]
-#            top_k_scores = top_k_scores[incomplete_inds].unsqueeze(1)
-#            k_prev_words = next_word_inds[incomplete_inds].unsqueeze(1)
-#    
-#            # Break if things have been going on too long
-#            if step > 50:
-#                break
-#            step += 1
-#    
-#        i = complete_seqs_scores.index(max(complete_seqs_scores))
-#        seq = complete_seqs[i]
-#        alphas = complete_seqs_alpha[i]
-#    
-#        return seq, alphas
     
     
 class CNN_RNN(nn.Module):
     """
         Wrapper class to combine CNN with visual attention RNN
     """
-    def __init__(self, args, device, is_eval=False):
+    def __init__(self, args, device):
         super(CNN_RNN, self).__init__()
         self.args = args
         self.device = device
-        self.is_eval = is_eval
         self.encoder = EncoderCNN(args)
         self.decoder = AttnDecoderRNN(ATTN_DIM, DECODER_DIM, ENCODER_DIM, dropout=args.dropout)
     
-    def forward(self, x, labels=None, loss_fn=None):
+    def forward(self, x, labels=None, loss_fn=None, is_eval=False):
         v_prob, v_feat = self.encoder(x)
 
-        hard_labels, total_loss, alphas = self.decoder(v_prob, v_feat, self.device, max_label_len=MAX_LABEL_LEN, 
-                                           prob_path_thresh=self.args.prob_path_thresh, loss_fn=loss_fn,
-                                           labels=labels, is_eval=self.is_eval)
+        hard_labels, total_loss, alphas = self.decoder(v_prob, 
+                                                       v_feat, 
+                                                       self.device, 
+                                                       max_label_len=MAX_LABEL_LEN, 
+                                                       prob_path_thresh=self.args.prob_path_thresh, 
+                                                       loss_fn=loss_fn,
+                                                       labels=labels, 
+                                                       is_eval=is_eval, 
+                                                       beam_search=self.args.beam_search,
+                                                       beam_size=self.args.beam_size)
         if labels is None:
             return hard_labels, alphas
         else:

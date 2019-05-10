@@ -62,7 +62,7 @@ def main(args):
         if args.model_name == 'baseline':
             model = ResNet50(args)
         else:
-            model = CNN_RNN(args, device=device, is_eval=True)
+            model = CNN_RNN(args, device=device)
             
         model = nn.DataParallel(model, args.gpu_ids)
         if not args.do_train: # load from saved model
@@ -116,7 +116,7 @@ def train(args, device, train_save_dir):
     if args.model_name == 'baseline':
         model = ResNet50(args)
     else:
-        model = CNN_RNN(args, device, is_eval=False)
+        model = CNN_RNN(args, device)
         
         
     model = nn.DataParallel(model, args.gpu_ids)
@@ -187,7 +187,8 @@ def train(args, device, train_save_dir):
                 else:
                     loss, _, _ = model(imgs.view(-1, C, H, W), 
                                        labels=labels.view(-1, NUM_CLASSES), 
-                                       loss_fn=loss_fn) # fuse batch size and ncrops
+                                       loss_fn=loss_fn,
+                                       is_eval=False) # fuse batch size and ncrops
                     loss_val = loss.item()
 
                 # Backward
@@ -301,7 +302,10 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
             else:
                 is_hard_label = True # for CNN-RNN, y_pred is hard labels
                 if labels is not None and (not is_test):
-                    loss, y_pred, alphas = model(imgs.view(-1, C, H, W), labels=labels, loss_fn=loss_fn) # fuse batch size and ncrops
+                    loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
+                                                 labels=labels, 
+                                                 loss_fn=loss_fn,
+                                                 is_eval=True) # fuse batch size and ncrops
                     y_pred_crops = y_pred
                     labels = labels[:,0,:]
                     # Predicted labels are the union of all crops
@@ -310,7 +314,10 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                     nll_meter.update(loss.item(), batch_size)
                     y_true_all.append(labels.cpu().numpy())
                 else:
-                    y_pred, alphas = model(imgs.view(-1, C, H, W), labels=labels, loss_fn=loss_fn)
+                    y_pred, alphas = model(imgs.view(-1, C, H, W), 
+                                           labels=labels, 
+                                           loss_fn=loss_fn,
+                                           is_eval=True)
                     y_pred_crops = y_pred
                     # Predicted labels are the union of all crops
                     y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
