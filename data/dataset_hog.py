@@ -14,35 +14,6 @@ from pathlib import Path
 from constants.constants import NUM_CLASSES, MEAN, STD, CULTURE_LABELS, NUM_CROPS
 import torch
 import cv2 #for hog implementation
-
-def compute_HOG(image_dir):
-    """
-    with each image, computes its HOG descriptor using cv2 library
-    https://stackoverflow.com/questions/6090399/get-hog-image-features-from-opencv-python
-    """
-    image = cv2.imread(image_dir,0)
-    winSize = (64,64)
-    blockSize = (16,16)
-    blockStride = (8,8)
-    cellSize = (8,8)
-    nbins = 9
-    derivAperture = 1
-    winSigma = 4.
-    histogramNormType = 0
-    L2HysThreshold = 2.0000000000000001e-01
-    gammaCorrection = 0
-    nlevels = 64
-    hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins,derivAperture,winSigma,
-                            histogramNormType,L2HysThreshold,gammaCorrection,nlevels)
-    #compute(img[, winStride[, padding[, locations]]]) -> descriptors
-    winStride = (8,8)
-    padding = (8,8)
-    locations = ((10,20),)
-    hist = hog.compute(image,winStride,padding,locations)
-    
-    #TODO: convert to tensor
-    
-    return hist
     
 
 class IMetDataset_HOG(data.Dataset):
@@ -148,12 +119,14 @@ class IMetDataset_HOG(data.Dataset):
             label_tensor = None
             #pos_weights = None
         
+        hog_tensor = self.compute_HOG(img_tensor)
         
-        #print('Shape of label_tensor:{}'.format(label_tensor.size()))
+        print('Shape of hog_tensor:{}'.format(hog_tensor.size()))
         example = (img_tensor,
                    label_tensor,
                    img_id,
-                   preproc)
+                   preproc,
+                   hog_tensor)
         
         return example
         
@@ -204,6 +177,45 @@ class IMetDataset_HOG(data.Dataset):
         pos_weights[indices] = np.divide(batch_size - frequencies[indices], frequencies[indices])
         print(pos_weights)
         return pos_weights
+    
+    def compute_HOG(image_tensor):
+        """
+        with each image, computes its HOG descriptor using cv2 library
+        https://stackoverflow.com/questions/6090399/get-hog-image-features-from-opencv-python
+        new goal:
+        take image tensor and output hog for each image
+        
+        input: (6, C, H, W)
+        returns: (6, n)
+        """
+#        image = cv2.imread(image_dir,0)
+        image_idx = image_tensor.size()[0] #size (6, C, H, W)
+        hogs = list()
+        for i in range(image_idx):
+            image = image_tensor[i] 
+            winSize = (64,64)
+            blockSize = (16,16)
+            blockStride = (8,8)
+            cellSize = (8,8)
+            nbins = 9
+            derivAperture = 1
+            winSigma = 4.
+            histogramNormType = 0
+            L2HysThreshold = 2.0000000000000001e-01
+            gammaCorrection = 0
+            nlevels = 64
+            hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins,derivAperture,winSigma,
+                                    histogramNormType,L2HysThreshold,gammaCorrection,nlevels)
+            #compute(img[, winStride[, padding[, locations]]]) -> descriptors
+            winStride = (8,8)
+            padding = (8,8)
+            locations = ((10,20),)
+            hist = hog.compute(image,winStride,padding,locations)
+            hogs.append(hist)
+            hogs_tensor = torch.stack(hogs, dim=0)
+        
+        
+        return hogs_tensor
                    
 
 class IMetDatasetBase_HOG(data.Dataset):

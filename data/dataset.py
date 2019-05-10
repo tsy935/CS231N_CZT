@@ -111,10 +111,12 @@ class IMetDataset(data.Dataset):
         
         
         #print('Shape of label_tensor:{}'.format(label_tensor.size()))
+        # None as a place holder for handcrafted feature
         example = (img_tensor,
                    label_tensor,
                    img_id,
-                   preproc)
+                   preproc,
+                   None)
         
         return example
         

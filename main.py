@@ -10,11 +10,13 @@ import pandas as pd
 import utils.utils as utils
 
 from data.dataset import IMetDataset
+from data.dataset_hog import IMetDataset_HOG
 #from data.dataset import IMetDatasetBase
 from args.args import get_args
 from collections import OrderedDict
 from json import dumps
 from models.ResNet import ResNet50
+from models.ResNet_HOGFC import ResNet50_HOGFC
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -60,8 +62,8 @@ def main(args):
     if args.do_predict:
         if args.model_name == 'baseline':
             model = ResNet50(args)
-#        else:
-#            model = CNN_RNN(args)
+        elif args.model_name == "baseline_hog":
+            model = ResNet50_HOGFC(args)
             
         model = nn.DataParallel(model, args.gpu_ids)
         if not args.do_train: # load from saved model
@@ -133,8 +135,12 @@ def train(args, device, train_save_dir):
 
     # Get data loader
     log.info('Building dataset...')  
-    
-    train_dataset = IMetDataset(root_dir=Path(TRAIN_PATH),
+    if args.extract_hog_feature == True or args.model_name=="baseline_hog":
+        train_dataset = IMetDataset_HOG(root_dir=Path(TRAIN_PATH),
+                                csv_file=TRAIN_CSV,
+                                mode='train')
+    else:
+        train_dataset = IMetDataset(root_dir=Path(TRAIN_PATH),
                                 csv_file=TRAIN_CSV,
                                 mode='train')
     train_loader = data.DataLoader(dataset=train_dataset,
@@ -153,7 +159,7 @@ def train(args, device, train_save_dir):
         log.info('Starting epoch {}...'.format(epoch))
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
-            for imgs, labels, _, _ in train_loader:
+            for imgs, labels, _, _,_ in train_loader:
                 batch_size, ncrops, C, H, W = imgs.size()  
                 #batch_size, C, H, W = imgs.size()
                 
@@ -236,9 +242,16 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         data_dir = TRAIN_PATH
         csv_file = TRAIN_CSV
         
-    dataset = IMetDataset(root_dir=Path(data_dir),
+    if args.extract_hog_feature == True or args.model_name=="baseline_hog":
+        dataset = IMetDataset_HOG(root_dir=Path(data_dir),
                           csv_file=csv_file,
                           mode='evaluate')
+    else:
+        dataset = IMetDataset(root_dir=Path(data_dir),
+                          csv_file=csv_file,
+                          mode='evaluate')
+        
+    
     data_loader = data.DataLoader(dataset=dataset,
                                  shuffle=False,
                                  batch_size=args.test_batch_size,

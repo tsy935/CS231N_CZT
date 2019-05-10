@@ -112,6 +112,9 @@ def get_args():
                         type=float,
                         default=5.0,
                         help='Maximum gradient norm for gradient clipping.')
+    parser.add_argument('--extract_hog_feature',
+                        default=False,
+                        help='Whether to extract hog features while loading data')
     
     args = parser.parse_args()  
     
