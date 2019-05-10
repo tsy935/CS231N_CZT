@@ -66,6 +66,14 @@ def get_args():
                         default='resize_crop',
                         choices=('resize_only','crop_only','resize_crop'),
                         help='Data preprocessing step to be used for evaluation.')
+    parser.add_argument('--dropout',
+                        type=float,
+                        default=0.5,
+                        help='Dropout probability to be applied in RNN final FC layers.')
+    parser.add_argument('--prob_path_thresh',
+                        type=float,
+                        default=-50.,
+                        help='Prediction path probability threshold for RNN.')
     parser.add_argument('--max_pos_weight',
                         type=float,
                         default=100.,
@@ -96,6 +104,14 @@ def get_args():
                         default='test',
                         choices=('train','dev','test'),
                         help='Split used for testing. Prediction results will be written to csv file.') 
+    parser.add_argument('--beam_search',
+                        default=False,
+                        action='store_true',
+                        help='Whether to perform beam search during evaluation.')
+    parser.add_argument('--beam_size',
+                        type=int,
+                        default=3,
+                        help='Number of beams to search over.')
     parser.add_argument('--best_val_results',
                         type=str,
                         default=None,

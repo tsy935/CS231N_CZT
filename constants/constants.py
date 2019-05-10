@@ -37,4 +37,11 @@ CULTURE_LABELS = list(np.arange(0,398))
 
 # number of random crops
 NUM_CROPS = 5
-#NUM_CROPS = 0
+
+# Attention layer and decoder RNN dimensions, currently fixed
+ATTN_DIM = 512  # dimension of attention linear layers
+ENCODER_DIM = 2048 # dimension of encoder CNN
+DECODER_DIM = 512  # dimension of decoder RNN
+
+# TODO: Change this to max label length in train split!!
+MAX_LABEL_LEN = 10

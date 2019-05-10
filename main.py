@@ -15,13 +15,14 @@ from args.args import get_args
 from collections import OrderedDict
 from json import dumps
 from models.ResNet import ResNet50
+from models.CNN_RNN import CNN_RNN
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from path import Path
 
 
-from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED, ARGS_FILE_NAME
+from constants.constants import TRAIN_PATH, TRAIN_CSV, DEV_PATH, DEV_CSV, TEST_PATH, TEST_CSV, SEED, ARGS_FILE_NAME, NUM_CLASSES
 
 
 def main(args):
@@ -60,8 +61,8 @@ def main(args):
     if args.do_predict:
         if args.model_name == 'baseline':
             model = ResNet50(args)
-#        else:
-#            model = CNN_RNN(args)
+        else:
+            model = CNN_RNN(args, device=device)
             
         model = nn.DataParallel(model, args.gpu_ids)
         if not args.do_train: # load from saved model
@@ -78,12 +79,23 @@ def main(args):
             best_thresh = val_results['best_thresh']
          
         model.to(device)
-        results = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
+        results, vis_dict = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
         
         # Log to console
         results_str = ', '.join('{}: {:05.2f}'.format(k, v)
                                 for k, v in results.items())
         print('{} prediction results: {}'.format(args.split, results_str))
+        
+        # Save alphas and results
+        test_results_dir = os.path.join(test_save_dir, 'test_results')
+        with open(test_results_dir, 'wb') as f:
+            pickle.dump(f, results)
+            
+        if args.model_name == 'cnn-rnn':
+            test_alphas_dir = os.path.join(test_save_dir, 'test_visualization')
+            with open(test_alphas_dir, 'wb') as f:
+                pickle.dump(f, vis_dict) 
+            
         
 
 def train(args, device, train_save_dir):
@@ -91,14 +103,21 @@ def train(args, device, train_save_dir):
     log = utils.get_logger(train_save_dir, 'train')
     tbx = SummaryWriter(train_save_dir)
     log.info('Args: {}'.format(dumps(vars(args), indent=4, sort_keys=True)))
+    
+    # Define loss function
+    pos_weights = utils.comp_pos_weights(TRAIN_CSV, args.max_pos_weight)
+    if args.loss_fn_name == 'BCE':
+        loss_fn = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.tensor(pos_weights, dtype=torch.float)).to(device) # more stable than BCELoss
+    else:
+        loss_fn = utils.FocalLoss(gamma=args.gamma)
 
     # Get model
-    # TODO: add option to use other models
     log.info('Building model...')
     if args.model_name == 'baseline':
         model = ResNet50(args)
-#    else:
-#        model = CNN_RNN(args)
+    else:
+        model = CNN_RNN(args, device)
+        
         
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
@@ -123,12 +142,7 @@ def train(args, device, train_save_dir):
                            lr=args.lr_init, weight_decay=args.l2_wd)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs)
     
-    # Define loss function
-    pos_weights = utils.comp_pos_weights(TRAIN_CSV, args.max_pos_weight)
-    if args.loss_fn_name == 'BCE':
-        loss_fn = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=torch.tensor(pos_weights, dtype=torch.float)).to(device) # more stable than BCELoss
-    else:
-        loss_fn = utils.FocalLoss(gamma=args.gamma)
+
 
 
     # Get data loader
@@ -155,7 +169,6 @@ def train(args, device, train_save_dir):
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
             for imgs, labels, _, _ in train_loader:
                 batch_size, ncrops, C, H, W = imgs.size()  
-                #batch_size, C, H, W = imgs.size()
                 
                 # Setup for forward
                 imgs = imgs.to(device)
@@ -165,13 +178,18 @@ def train(args, device, train_save_dir):
                 optimizer.zero_grad()
                 
                 # Forward
-                logits = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
-                logits = logits.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
-                #logits = model(imgs)
-                #preds = torch.sigmoid(logits)
+                if args.model_name == 'baseline':
+                    logits = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
+                    logits = logits.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
                 
-                loss = loss_fn(logits, labels) # we use BCEWithLogitsLoss
-                loss_val = loss.item()
+                    loss = loss_fn(logits, labels) # we use BCEWithLogitsLoss
+                    loss_val = loss.item()
+                else:
+                    loss, _, _ = model(imgs.view(-1, C, H, W), 
+                                       labels=labels.view(-1, NUM_CLASSES), 
+                                       loss_fn=loss_fn,
+                                       is_eval=False) # fuse batch size and ncrops
+                    loss_val = loss.item()
 
                 # Backward
                 loss.backward()
@@ -193,10 +211,10 @@ def train(args, device, train_save_dir):
                 steps_till_eval -= batch_size
                 if steps_till_eval <= 0:
                     steps_till_eval = args.eval_steps
-
+                    
                     # Evaluate and save checkpoint
                     log.info('Evaluating at step {}...'.format(step))
-                    eval_results = evaluate(model,                                            
+                    eval_results, _ = evaluate(model,                                            
                                             args,
                                             train_save_dir,
                                             device,
@@ -208,7 +226,7 @@ def train(args, device, train_save_dir):
                     model.train()
 
                     # Log to console
-                    results_str = ', '.join('{}: {:05.2f}'.format(k, v)
+                    results_str = ', '.join('{}: {}'.format(k, v)
                                             for k, v in eval_results.items())
                     log.info('Dev {}'.format(results_str))
 
@@ -267,58 +285,86 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 
             # Setup for forward
             imgs = imgs.to(device)
-            if labels is not None:
-                labels = labels[:,0,:].to(device) # shape (batch_size, NUM_CLASSES)
-                #labels = labels.to(device)
-                
-
+            labels = labels.to(device) # (batch_size, ncrosp, NUM_CLASSES)
+                       
             # Forward
-            logits = model(imgs.view(-1, C, H, W))
-            logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
-            #logits = model(imgs)
-            y_pred = torch.sigmoid(logits)
-            
-            y_pred_all.append(y_pred.cpu().numpy())
+            if args.model_name == 'baseline': 
+                is_hard_label = False # for baseline, y_pred is soft probabilities
+                logits = model(imgs.view(-1, C, H, W))
+                logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
+                y_pred = torch.sigmoid(logits)
+                if labels is not None and (not is_test): # if label is available
+                    labels = labels[:,0,:] # all crops labels are the same
+                    loss = loss_fn(logits, labels)
+                    nll_meter.update(loss.item(), batch_size)
+                    y_true_all.append(labels.cpu().numpy())
+                alphas = None
+            else:
+                is_hard_label = True # for CNN-RNN, y_pred is hard labels
+                if labels is not None and (not is_test):
+                    loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
+                                                 labels=labels, 
+                                                 loss_fn=loss_fn,
+                                                 is_eval=True) # fuse batch size and ncrops
+                    y_pred_crops = y_pred
+                    labels = labels[:,0,:]
+                    # Predicted labels are the union of all crops
+                    y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
+                    y_pred[y_pred > 1] = 1 # (batch_size, NUM_CLASSES)
+                    nll_meter.update(loss.item(), batch_size)
+                    y_true_all.append(labels.cpu().numpy())
+                else:
+                    y_pred, alphas = model(imgs.view(-1, C, H, W), 
+                                           labels=labels, 
+                                           loss_fn=loss_fn,
+                                           is_eval=True)
+                    y_pred_crops = y_pred
+                    # Predicted labels are the union of all crops
+                    y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
+                    y_pred[y_pred > 1] = 1
+                
+            y_pred_all.append(y_pred)
             orig_id_all.extend(list(orig_id))
                 
             # Log info
             progress_bar.update(batch_size)
-            
-            if labels is not None: # if label is available
-                loss = loss_fn(logits, labels)
-                nll_meter.update(loss.item(), batch_size)
-                y_true_all.append(labels.cpu().numpy())
-                    
+        
+        # Save last batch alphas and images for visualization
+        vis_dict = {}
+        if args.model_name == 'cnn-rnn':           
+            vis_dict['imgs'] = imgs.cpu().numpy()
+            vis_dict['alphas'] = alphas  
+            vis_dict['labels_pred'] = y_pred_crops
+                 
     
     # if label is available
     if labels is not None:
-        if is_test == False: # only threshold search on validation set
+        if is_test == False and not(is_hard_label): # only threshold search on validation set
             thresh_search = True
             thresh = None
         else:
             thresh_search = False
             thresh = best_thresh
         scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
-                                                     orig_id_all, preproc_all, is_test=False, 
-                                                     thresh_search=thresh_search, thresh=thresh)
+                                                     orig_id_all, is_test=False, 
+                                                     thresh_search=thresh_search, thresh=thresh, 
+                                                     is_hard_label=is_hard_label)
         results_list = [('Loss', nll_meter.avg),
                         ('F2', scores_dict['F2']),
                         ('F1', scores_dict['F1']),
                         ('recall', scores_dict['recall']),
-                        ('precision', scores_dict['precision']),
-                        ('best_thresh', best_thresh)]
+                        ('precision', scores_dict['precision'])]
+        if best_thresh is not None:
+            results_list['best_thresh'] = best_thresh
+            
         results = OrderedDict(results_list)
     else: # if label is not available
         writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
                                         orig_id_all, preproc_all, is_test=True, 
-                                        thresh_search=False, thresh=best_thresh)
+                                        thresh_search=False, thresh=best_thresh,
+                                        is_hard_label=is_hard_label)
         results = {}
 
-  
-    #TMP
-    #for key, val in writeout_dict.items():
-        #pred1 = np.argwhere(val == 1.0).reshape(-1).tolist()
-        #print(pred1)
     
     # Write prediction into csv file
     if is_test and args.write_outputs:
@@ -333,7 +379,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         df_out.to_csv(out_file_name, index=False)
         print('Prediction written to {}!'.format(out_file_name))        
             
-    return results
+    return results, vis_dict
 
 
 
