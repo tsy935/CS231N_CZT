@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision as vision
 from constants.constants import NUM_CLASSES
-
+from models.MLP import MultiLayerPerceptron
 #TODO: writes a link to HOG data: aim is the feed HOG into the last FC layer as part of input
 
 class ResNet50_HOGFC(nn.Module):
@@ -53,6 +53,7 @@ class ResNet50_HOGFC(nn.Module):
         self.hogfc = nn.Linear(num_ftrs+27*27*36, NUM_CLASSES)
         
         # TODO if one layer fc works, we can run MLP
+#        self.hogmlp = MultiLayerPerceptron(num_ftrs+27*27*36)
             
         
     def forward(self, x):
