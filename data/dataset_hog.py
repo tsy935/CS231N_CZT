@@ -192,7 +192,10 @@ class IMetDataset_HOG(data.Dataset):
         image_idx = image_tensor.size()[0] #size (6, C, H, W)
         hogs = list()
         for i in range(image_idx):
-            image = image_tensor[i,:,:,:] 
+            image = image_tensor[i,:,:,:]
+            image = image.numpy()
+            print(image)
+            print(type(image))
             winSize = (64,64)
             blockSize = (16,16)
             blockStride = (8,8)
