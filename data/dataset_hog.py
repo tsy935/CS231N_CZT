@@ -178,7 +178,7 @@ class IMetDataset_HOG(data.Dataset):
         print(pos_weights)
         return pos_weights
     
-    def compute_HOG(image_tensor):
+    def compute_HOG(self,image_tensor):
         """
         with each image, computes its HOG descriptor using cv2 library
         https://stackoverflow.com/questions/6090399/get-hog-image-features-from-opencv-python

@@ -14,10 +14,9 @@ from models.MLP import MultiLayerPerceptron
 #TODO: writes a link to HOG data: aim is the feed HOG into the last FC layer as part of input
 
 class ResNet50_HOGFC(nn.Module):
-    def __init__(self, args, hog_features):
+    def __init__(self, args):
         super(ResNet50_HOGFC, self).__init__()
         
-        self.hog_features = hog_features
         
         if args.use_pretrained:
             self.resnet50 = vision.models.resnet50(pretrained=True)
@@ -56,7 +55,7 @@ class ResNet50_HOGFC(nn.Module):
 #        self.hogmlp = MultiLayerPerceptron(num_ftrs+27*27*36)
             
         
-    def forward(self, x):
+    def forward(self, x, hog_features):
         # intermediate result before fc
         resnet_features = self.conv_features(x) 
         # batch size
@@ -64,7 +63,7 @@ class ResNet50_HOGFC(nn.Module):
         # flatten resnet_features
         resnet_features = resnet_features.reshape(B,-1)
         # concatenate with hog feature
-        features_concat = torch.cat((resnet_features, self.hog_features),dim=1)
+        features_concat = torch.cat((resnet_features, hog_features),dim=1)
         # fc
         scores = self.hogfc(features_concat)
         

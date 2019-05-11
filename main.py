@@ -83,7 +83,7 @@ def main(args):
             with open(best_val_results, 'rb') as f:
                 val_results = pickle.load(f)
                 
-        if args.model_name == 'baseline':
+        if args.model_name == 'baseline' or args.model_name=='baseline_hog':
             best_thresh = val_results['best_thresh']
         else:
             best_thresh = None
@@ -182,7 +182,7 @@ def train(args, device, train_save_dir):
         log.info('Starting epoch {}...'.format(epoch))
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
-            for imgs, labels, _, _,_ in train_loader:
+            for imgs, labels, _, _, hogs in train_loader:
                 batch_size, ncrops, C, H, W = imgs.size()  
                 
                 # Setup for forward
@@ -193,8 +193,11 @@ def train(args, device, train_save_dir):
                 optimizer.zero_grad()
                 
                 # Forward
-                if args.model_name == 'baseline':
-                    logits = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
+                if args.model_name == 'baseline' or args.model_name == 'baseline_hog':
+                    if args.model_name=='baseline':
+                        logits = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
+                    else:
+                        logits = model(imgs.view(-1, C, H, W), hogs) # fuse batch size and ncrops
                     logits = logits.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
                 
                     loss = loss_fn(logits, labels) # we use BCEWithLogitsLoss
@@ -301,18 +304,23 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     orig_id_all = []
     preproc_all = []
     with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
-        for imgs, labels, orig_id, _ in data_loader:
+        for imgs, labels, orig_id, hogs in data_loader:
             batch_size, ncrops, C, H, W = imgs.size()
             #batch_size, C, H, W = imgs.size()
                 
             # Setup for forward
             imgs = imgs.to(device)
             labels = labels.to(device) # (batch_size, ncrosp, NUM_CLASSES)
-                       
+            hogs = hogs.to(device)
+
             # Forward
-            if args.model_name == 'baseline': 
+            if args.model_name == 'baseline' or args.model_name =='baseline_hog': 
                 is_hard_label = False # for baseline, y_pred is soft probabilities
-                logits = model(imgs.view(-1, C, H, W))
+                if args.model_name == 'baseline':
+                    logits = model(imgs.view(-1, C, H, W))
+                else:
+                    logits = model(imgs.view(-1, C, H, W), hogs) # fuse batch size and ncrops
+                
                 logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
                 y_pred = torch.sigmoid(logits)
                 if labels is not None and (not is_test): # if label is available
