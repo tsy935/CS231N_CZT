@@ -66,7 +66,7 @@ def main(args):
     if args.do_predict:
         if args.model_name == 'baseline':
             model = ResNet50(args)
-        elif args.model_name == 'cnn_rnn':
+        elif args.model_name == 'cnn-rnn':
             model = CNN_RNN(args, device=device)
         elif args.model_name == "baseline_hog":
             model = ResNet50_HOGFC(args)
@@ -76,14 +76,17 @@ def main(args):
             model, _ = utils.load_model(model, args.load_path, args.gpu_ids)
             with open(args.best_val_results, 'rb') as f:
                 val_results = pickle.load(f)
-            best_thresh = val_results['best_thresh']
         else: # load from newly trained model
             best_path = os.path.join(train_save_dir, 'best.pth.tar')
             best_val_results = os.path.join(train_save_dir, 'best_val_results')
             model, _ = utils.load_model(model, best_path, args.gpu_ids)
             with open(best_val_results, 'rb') as f:
                 val_results = pickle.load(f)
+                
+        if args.model_name == 'baseline':
             best_thresh = val_results['best_thresh']
+        else:
+            best_thresh = None
          
         model.to(device)
         results, vis_dict = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
@@ -122,7 +125,7 @@ def train(args, device, train_save_dir):
     log.info('Building model...')
     if args.model_name == 'baseline':
         model = ResNet50(args)
-    elif args.model_name == 'cnn_rnn':
+    elif args.model_name == 'cnn-rnn':
         model = CNN_RNN(args, device)
     elif args.model_name == "baseline_hog":
         model = ResNet50_HOGFC(args)
