@@ -18,5 +18,5 @@ python ./main.py \
   --metric_avg samples \
   --max_pos_weight 10 \
   --feature_extracting \
-  --prob_path_thresh 3e-3 \
+  --prob_path_thresh 1e-3 \
   --save_dir /mnt/disks/large/output/cnnrnn

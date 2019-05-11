@@ -284,10 +284,8 @@ class CNN_RNN(nn.Module):
                                                        is_eval=is_eval, 
                                                        beam_search=self.args.beam_search,
                                                        beam_size=self.args.beam_size)
-        if labels is None:
-            return hard_labels, alphas
-        else:
-            return total_loss, hard_labels, alphas
+
+        return total_loss, hard_labels, alphas
         
         
         

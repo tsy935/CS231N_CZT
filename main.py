@@ -89,7 +89,10 @@ def main(args):
             best_thresh = None
          
         model.to(device)
-        results, vis_dict = evaluate(model, args, test_save_dir, device, is_test=True, write_outputs=True, best_thresh=best_thresh)
+        results, vis_dict = evaluate(model, args, test_save_dir, 
+                                     device, is_test=True, 
+                                     write_outputs=True, 
+                                     best_thresh=best_thresh)
         
         # Log to console
         results_str = ', '.join('{}: {:05.2f}'.format(k, v)
@@ -99,12 +102,12 @@ def main(args):
         # Save alphas and results
         test_results_dir = os.path.join(test_save_dir, 'test_results')
         with open(test_results_dir, 'wb') as f:
-            pickle.dump(f, results)
+            pickle.dump(results, f)
             
         if args.model_name == 'cnn-rnn':
             test_alphas_dir = os.path.join(test_save_dir, 'test_visualization')
             with open(test_alphas_dir, 'wb') as f:
-                pickle.dump(f, vis_dict) 
+                pickle.dump(vis_dict, f) 
             
         
 
@@ -301,7 +304,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     orig_id_all = []
     preproc_all = []
     with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
-        for imgs, labels, orig_id, _ in data_loader:
+        for imgs, labels, orig_id, _, _ in data_loader:
             batch_size, ncrops, C, H, W = imgs.size()
             #batch_size, C, H, W = imgs.size()
                 
@@ -315,7 +318,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 logits = model(imgs.view(-1, C, H, W))
                 logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
                 y_pred = torch.sigmoid(logits)
-                if labels is not None and (not is_test): # if label is available
+                if labels is not None: # if label is available
                     labels = labels[:,0,:] # all crops labels are the same
                     loss = loss_fn(logits, labels)
                     nll_meter.update(loss.item(), batch_size)
@@ -323,12 +326,12 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 alphas = None
             else:
                 is_hard_label = True # for CNN-RNN, y_pred is hard labels
-                if labels is not None and (not is_test):
-                    loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
-                                                 labels=labels, 
-                                                 loss_fn=loss_fn,
-                                                 is_eval=True) # fuse batch size and ncrops
-                    y_pred_crops = y_pred
+                loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
+                                             labels=labels, 
+                                             loss_fn=loss_fn,
+                                             is_eval=True) # fuse batch size and ncrops
+                y_pred_crops = y_pred                
+                if labels is not None:
                     labels = labels[:,0,:]
                     # Predicted labels are the union of all crops
                     y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
@@ -336,11 +339,6 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                     nll_meter.update(loss.item(), batch_size)
                     y_true_all.append(labels.cpu().numpy())
                 else:
-                    y_pred, alphas = model(imgs.view(-1, C, H, W), 
-                                           labels=labels, 
-                                           loss_fn=loss_fn,
-                                           is_eval=True)
-                    y_pred_crops = y_pred
                     # Predicted labels are the union of all crops
                     y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
                     y_pred[y_pred > 1] = 1
