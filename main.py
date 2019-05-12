@@ -305,7 +305,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     orig_id_all = []
     preproc_all = []
     with torch.no_grad(), tqdm(total=len(data_loader.dataset)) as progress_bar:
-        for imgs, labels, orig_id, hogs in data_loader:
+        for imgs, labels, orig_id,_, hogs in data_loader:
             batch_size, ncrops, C, H, W = imgs.size()
             #batch_size, C, H, W = imgs.size()
                 
