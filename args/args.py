@@ -92,7 +92,7 @@ def get_args():
                         default=None,
                         help='Number of early layers to freeze.')
     parser.add_argument('--do_predict',
-                        default=True,
+                        default=False,
                         action='store_true',
                         help='To evaluate the model.')
     parser.add_argument('--test_batch_size',
@@ -121,7 +121,7 @@ def get_args():
                         default='samples',
                         help='Averaing method to compute evaluation metrics.')
     parser.add_argument('--write_outputs',
-                        default=True,
+                        default=False,
                         action='store_true',
                         help='Whether write prediction to a csv file.')
     parser.add_argument('--max_grad_norm',
