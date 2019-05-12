@@ -14,6 +14,7 @@ from pathlib import Path
 from constants.constants import NUM_CLASSES, MEAN, STD, CULTURE_LABELS, NUM_CROPS
 import torch
 import cv2 #for hog implementation
+from skimage.feature import hog
     
 
 class IMetDataset_HOG(data.Dataset):
@@ -178,6 +179,56 @@ class IMetDataset_HOG(data.Dataset):
         print(pos_weights)
         return pos_weights
     
+#     def compute_HOG(self,image_tensor):
+#         """
+#         with each image, computes its HOG descriptor using cv2 library
+#         https://stackoverflow.com/questions/6090399/get-hog-image-features-from-opencv-python
+#         new goal:
+#         take image tensor and output hog for each image
+        
+#         input: (6, C, H, W)
+#         returns: (6, n)
+#         """
+# #        image = cv2.imread(image_dir,0)
+#         image_idx = image_tensor.size()[0] #size (6, C, H, W)
+#         hogs = list()
+#         for i in range(image_idx):
+#             image = image_tensor[i,:,:,:]
+#             image = image.numpy()
+
+#             # TODO: unnormalize image and convert to int using MEAN and STD
+#             x = np.zeros_like(image)
+#             x[0, :, :] = image[0, :, :] * STD[0] + MEAN[0]
+#             x[1, :, :] = image[1, :, :] * STD[1] + MEAN[1]
+#             x[2, :, :] = image[2, :, :] * STD[2] + MEAN[2]
+#             x = x*255
+#             cv_x = x.astype(np.uint8)
+#             print(cv_x.dtype)
+#             winSize = (224,224)
+#             blockSize = (16,16)
+#             blockStride = (8,8)
+#             cellSize = (8,8)
+#             nbins = 9
+#             derivAperture = 1
+#             winSigma = 4.
+#             histogramNormType = 0
+#             L2HysThreshold = 2.0000000000000001e-01
+#             gammaCorrection = 0
+#             nlevels = 64
+#             hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins,derivAperture,winSigma,
+#                                     histogramNormType,L2HysThreshold,gammaCorrection,nlevels)
+#             #compute(img[, winStride[, padding[, locations]]]) -> descriptors
+#             winStride = (8,8)
+#             padding = (8,8)
+#             locations = ((10,20),)
+#             # 27*27*36
+#             hist = hog.compute(cv_x,winStride,padding,locations)
+#             hogs.append(hist)
+#             hogs_tensor = torch.stack(hogs, dim=0)
+        
+        
+#         return hogs_tensor
+
     def compute_HOG(self,image_tensor):
         """
         with each image, computes its HOG descriptor using cv2 library
@@ -202,26 +253,12 @@ class IMetDataset_HOG(data.Dataset):
             x[2, :, :] = image[2, :, :] * STD[2] + MEAN[2]
             x = x*255
             cv_x = x.astype(np.uint8)
-            print(cv_x.dtype)
-            winSize = (224,224)
-            blockSize = (16,16)
-            blockStride = (8,8)
-            cellSize = (8,8)
-            nbins = 9
-            derivAperture = 1
-            winSigma = 4.
-            histogramNormType = 0
-            L2HysThreshold = 2.0000000000000001e-01
-            gammaCorrection = 0
-            nlevels = 64
-            hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins,derivAperture,winSigma,
-                                    histogramNormType,L2HysThreshold,gammaCorrection,nlevels)
-            #compute(img[, winStride[, padding[, locations]]]) -> descriptors
-            winStride = (8,8)
-            padding = (8,8)
-            locations = ((10,20),)
+            # transpose dimensions since hog implementation requires image to be  (M, N[, C]) ndarray
+            cv_x = np.transpose(cv_x, (1,2,0))
+
             # 27*27*36
-            hist = hog.compute(cv_x,winStride,padding,locations)
+            hist = hog(cv_x, orientations=8, pixels_per_cell=(16, 16),
+                    cells_per_block=(1, 1), visualize=False, feature_vector=True, multichannel=True)
             hogs.append(hist)
             hogs_tensor = torch.stack(hogs, dim=0)
         
