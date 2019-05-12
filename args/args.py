@@ -8,11 +8,11 @@ def get_args():
                         default=None,
                         help='Directory to save the outputs and checkpoints.')
     parser.add_argument('--do_train',
-                        default=True,
+                        default=False,
                         action='store_true',
                         help='To train the model.')
     parser.add_argument('--use_pretrained',
-                        default=True,
+                        default=False,
                         action='store_true',
                         help='Whether to use pre-trained model.')
     parser.add_argument('--model_name',

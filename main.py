@@ -47,13 +47,16 @@ def main(args):
     # Get save directories
     if args.do_train:
         train_save_dir = utils.get_save_dir(args.save_dir, training=True)
+        args.train_save_dir = train_save_dir
     if args.do_predict:
         test_save_dir = utils.get_save_dir(args.save_dir, training=False)
+        args.test_save_dir = test_save_dir
     
     # Save args
-    args.train_save_dir = train_save_dir
-    args.test_save_dir = test_save_dir
-    args_file = os.path.join(train_save_dir, ARGS_FILE_NAME)
+    if args.do_train:
+        args_file = os.path.join(train_save_dir, ARGS_FILE_NAME)
+    else:
+        args_file = os.path.join(test_save_dir, ARGS_FILE_NAME)
     with open(args_file, 'w') as f:
          json.dump(vars(args), f, indent=4, sort_keys=True)
     
