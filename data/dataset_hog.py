@@ -194,8 +194,15 @@ class IMetDataset_HOG(data.Dataset):
         for i in range(image_idx):
             image = image_tensor[i,:,:,:]
             image = image.numpy()
-            print(image)
-            print(type(image))
+
+            # TODO: unnormalize image and convert to int using MEAN and STD
+            x = image.new(*image.size())
+            x[:, 0, :, :] = image[:, 0, :, :] * STD[0] + MEAN[0]
+            x[:, 1, :, :] = image[:, 1, :, :] * STD[1] + MEAN[1]
+            x[:, 2, :, :] = image[:, 2, :, :] * STD[2] + MEAN[2]
+            x = x.int()
+            # print(image)
+            # print(type(image))
             winSize = (64,64)
             blockSize = (16,16)
             blockStride = (8,8)
@@ -214,7 +221,7 @@ class IMetDataset_HOG(data.Dataset):
             padding = (8,8)
             locations = ((10,20),)
             # 27*27*36
-            hist = hog.compute(image,winStride,padding,locations)
+            hist = hog.compute(x,winStride,padding,locations)
             hogs.append(hist)
             hogs_tensor = torch.stack(hogs, dim=0)
         
