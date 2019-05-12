@@ -5,7 +5,7 @@ Created on Wed May  8 00:52:38 2019
 
 @author: rugezhao
 """
-
+import numpy as np
 import torch.utils.data as data
 import torchvision as vision
 import pandas as pd
@@ -196,14 +196,14 @@ class IMetDataset_HOG(data.Dataset):
             image = image.numpy()
 
             # TODO: unnormalize image and convert to int using MEAN and STD
-            x = image.new(*image.size())
-            x[:, 0, :, :] = image[:, 0, :, :] * STD[0] + MEAN[0]
-            x[:, 1, :, :] = image[:, 1, :, :] * STD[1] + MEAN[1]
-            x[:, 2, :, :] = image[:, 2, :, :] * STD[2] + MEAN[2]
-            x = x.int()
-            # print(image)
-            # print(type(image))
-            winSize = (64,64)
+            x = np.zeros_like(image)
+            x[0, :, :] = image[0, :, :] * STD[0] + MEAN[0]
+            x[1, :, :] = image[1, :, :] * STD[1] + MEAN[1]
+            x[2, :, :] = image[2, :, :] * STD[2] + MEAN[2]
+            x = x*255
+            cv_x = x.astype(np.uint8)
+            print(cv_x.dtype)
+            winSize = (224,224)
             blockSize = (16,16)
             blockStride = (8,8)
             cellSize = (8,8)
@@ -221,7 +221,7 @@ class IMetDataset_HOG(data.Dataset):
             padding = (8,8)
             locations = ((10,20),)
             # 27*27*36
-            hist = hog.compute(x,winStride,padding,locations)
+            hist = hog.compute(cv_x,winStride,padding,locations)
             hogs.append(hist)
             hogs_tensor = torch.stack(hogs, dim=0)
         
