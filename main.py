@@ -188,7 +188,8 @@ def train(args, device, train_save_dir):
                 # Setup for forward
                 imgs = imgs.to(device)
                 labels = labels.to(device)
-                                
+                hogs = hogs.to(device)
+
                 # Zero out optimizer first
                 optimizer.zero_grad()
                 

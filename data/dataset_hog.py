@@ -122,7 +122,7 @@ class IMetDataset_HOG(data.Dataset):
         
         hog_tensor = self.compute_HOG(img_tensor)
         
-        print('Shape of hog_tensor:{}'.format(hog_tensor.size()))
+#        print('Shape of hog_tensor:{}'.format(hog_tensor.size()))
         example = (img_tensor,
                    label_tensor,
                    img_id,
@@ -245,8 +245,7 @@ class IMetDataset_HOG(data.Dataset):
         for i in range(image_idx):
             image = image_tensor[i,:,:,:]
             image = image.numpy()
-
-            # TODO: unnormalize image and convert to int using MEAN and STD
+            # revert normalization
             x = np.zeros_like(image)
             x[0, :, :] = image[0, :, :] * STD[0] + MEAN[0]
             x[1, :, :] = image[1, :, :] * STD[1] + MEAN[1]
@@ -259,6 +258,7 @@ class IMetDataset_HOG(data.Dataset):
             # 27*27*36
             hist = hog(cv_x, orientations=8, pixels_per_cell=(16, 16),
                     cells_per_block=(1, 1), visualize=False, feature_vector=True, multichannel=True)
+            hist = torch.from_numpy(hist)
             hogs.append(hist)
             hogs_tensor = torch.stack(hogs, dim=0)
         
