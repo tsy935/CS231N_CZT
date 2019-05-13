@@ -389,8 +389,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                         ('recall', scores_dict['recall']),
                         ('precision', scores_dict['precision'])]
         if best_thresh is not None:
-            results_list['best_thresh'] = best_thresh
-            
+            results_list.append(('best_thresh', best_thresh)) 
         results = OrderedDict(results_list)
     else: # if label is not available
         writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
