@@ -45,13 +45,13 @@ class ResNet50_HOGFC(nn.Module):
             
         # modified input size of the last fc layer. added 27*27*36 which is the vector size using HOG for each image
             
-        # Remove linear and pool layers
+        # Remove linear layer
         modules = list(self.resnet50.children())[:-1]
-        self.conv_features = nn.Sequential(*modules) # all layers until last pool layer
+        self.conv_features = nn.Sequential(*modules) # all layers until last pool layer (inclusive)
             
-        #self.hogfc = nn.Linear(num_ftrs+1568, NUM_CLASSES)
+        # self.hogfc = nn.Linear(num_ftrs+1568, NUM_CLASSES)
         
-        # TODO if one layer fc works, we can run MLP
+        # one layer fc works, we can run MLP
         self.hogmlp = MultiLayerPerceptron(num_ftrs+1568)
             
         
@@ -63,8 +63,7 @@ class ResNet50_HOGFC(nn.Module):
         # flatten resnet_features
         resnet_features = resnet_features.reshape(B,-1)
         # concatenate with hog feature
-        # print(resnet_features.size())
-        # print(hog_features.size()) 
+         
         # convert to (batch_size*6, hog_vector_size)
         hog_features = hog_features.view(-1,1568)
         features_concat = torch.cat((resnet_features.float(), hog_features.float()),dim=1)
@@ -75,7 +74,7 @@ class ResNet50_HOGFC(nn.Module):
         return scores
     
     def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
-        # freeze some layers
+        # freeze nlayers_to_freeze layers
         if nlayers_to_freeze is not None:
             ct = 0
             for name, child in model.named_children():
@@ -88,3 +87,7 @@ class ResNet50_HOGFC(nn.Module):
             if feature_extracting: 
                 for param in model.parameters():
                     param.requires_grad = False
+
+        # the last layers that is a mlp is unfrozen
+        for param in model.hogmlp.parameters():
+            param.requires_grad=True
