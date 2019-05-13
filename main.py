@@ -331,6 +331,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 
                 logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
                 y_pred = torch.sigmoid(logits)
+                y_pred = y_pred.cpu().numpy()
                 if labels is not None: # if label is available
                     labels = labels[:,0,:] # all crops labels are the same
                     loss = loss_fn(logits, labels)
