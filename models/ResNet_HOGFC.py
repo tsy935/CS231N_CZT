@@ -10,14 +10,13 @@ import torch
 import torch.nn as nn
 import torchvision as vision
 from constants.constants import NUM_CLASSES
-
+from models.MLP import MultiLayerPerceptron
 #TODO: writes a link to HOG data: aim is the feed HOG into the last FC layer as part of input
 
 class ResNet50_HOGFC(nn.Module):
-    def __init__(self, args, hog_features):
+    def __init__(self, args):
         super(ResNet50_HOGFC, self).__init__()
         
-        self.hog_features = hog_features
         
         if args.use_pretrained:
             self.resnet50 = vision.models.resnet50(pretrained=True)
@@ -50,12 +49,13 @@ class ResNet50_HOGFC(nn.Module):
         modules = list(self.resnet50.children())[:-1]
         self.conv_features = nn.Sequential(*modules) # all layers until last pool layer
             
-        self.hogfc = nn.Linear(num_ftrs+27*27*36, NUM_CLASSES)
+        #self.hogfc = nn.Linear(num_ftrs+1568, NUM_CLASSES)
         
         # TODO if one layer fc works, we can run MLP
+        self.hogmlp = MultiLayerPerceptron(num_ftrs+1568)
             
         
-    def forward(self, x):
+    def forward(self, x, hog_features):
         # intermediate result before fc
         resnet_features = self.conv_features(x) 
         # batch size
@@ -63,11 +63,15 @@ class ResNet50_HOGFC(nn.Module):
         # flatten resnet_features
         resnet_features = resnet_features.reshape(B,-1)
         # concatenate with hog feature
-        features_concat = torch.cat((resnet_features, self.hog_features),dim=1)
+        # print(resnet_features.size())
+        # print(hog_features.size()) 
+        # convert to (batch_size*6, hog_vector_size)
+        hog_features = hog_features.view(-1,1568)
+        features_concat = torch.cat((resnet_features.float(), hog_features.float()),dim=1)
         # fc
-        scores = self.hogfc(features_concat)
-        
-        # TODO if one layer fc works, we can run MLP
+        # scores = self.hogfc(features_concat)
+        # mlp        
+        scores = self.hogmlp(features_concat)
         return scores
     
     def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
