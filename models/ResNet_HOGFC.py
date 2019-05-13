@@ -88,6 +88,4 @@ class ResNet50_HOGFC(nn.Module):
                 for param in model.parameters():
                     param.requires_grad = False
 
-        # the last layers that is a mlp is unfrozen
-        for param in model.hogmlp.parameters():
-            param.requires_grad=True
+        
