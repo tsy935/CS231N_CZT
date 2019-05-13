@@ -65,7 +65,7 @@ class ResNet50_HOGFC(nn.Module):
         # concatenate with hog feature
          
         # convert to (batch_size*6, hog_vector_size)
-        hog_features = hog_features.view(-1,1568)
+        hog_features = hog_features.reshape(B,-1)
         features_concat = torch.cat((resnet_features.float(), hog_features.float()),dim=1)
         # fc
         # scores = self.hogfc(features_concat)
@@ -88,4 +88,4 @@ class ResNet50_HOGFC(nn.Module):
                 for param in model.parameters():
                     param.requires_grad = False
 
-        
+
