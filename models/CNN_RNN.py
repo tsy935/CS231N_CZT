@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision as vision
 import numpy as np
-from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN
+from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN, TRAIN_PROPORTION_PATH
 
 class EncoderCNN(nn.Module):
     """
@@ -114,6 +114,10 @@ class AttnDecoderRNN(nn.Module):
         
         # Initialize weights
         self.init_weights()
+        
+        # Load class proportions
+        with open(TRAIN_PROPORTION_PATH, 'rb') as f:
+            class_prop = np.loadtxt(f, delimiter=',', skiprows=1)
 
     def init_weights(self):
         self.fc1.bias.data.fill_(0)
@@ -219,14 +223,22 @@ class AttnDecoderRNN(nn.Module):
             if is_eval:
                 prob_path = np.ones((batch_size, max_label_len))
                 hard_labels = np.zeros((batch_size, NUM_CLASSES))
+                thresholds = np.ones((batch_size, max_label_len))
                 for t in range(max_label_len):
                     # Compute normalized path probability, so that it is invariant to path length
-                    #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t+1]), axis=1)
-                    prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)**(1/(t+1))
+                    #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t]), axis=1)
+                    prob_path[:,t] = np.prod(soft_probs[:,:t], axis=1)**(1/t)
+                    
+                    # threshold to compare to
+                    l_t = y_tilt_num[:,:t] # (batch_size, t)                    
+                    curr_label_frac = LABEL_FRAC[l_t] # (batch_size, t) 
+                    thresholds[:,t] = np.prod(curr_label_frac * prob_path_thresh)**(1/t)
             
 #                print(prob_path)
-                masks = prob_path >= prob_path_thresh
-            
+                #masks = prob_path >= prob_path_thresh
+                # Use different thresholds for different classes
+                masks = prob_path >= thresholds
+        
                 masked_alphas = alphas * masks[:,:,np.newaxis]
                 for i in range(batch_size):
                     curr_labels = y_tilt_num[i, masks[i,:]].astype(int)
