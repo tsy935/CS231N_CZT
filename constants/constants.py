@@ -45,3 +45,7 @@ DECODER_DIM = 512  # dimension of decoder RNN
 
 # TODO: Change this to max label length in train split!!
 MAX_LABEL_LEN = 10
+
+
+# proportion of frequency file path
+TRAIN_PROPORTION_PATH = "~/CS231N_CZT/data/train_train_label_proportion.csv" 
