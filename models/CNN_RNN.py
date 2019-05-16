@@ -224,7 +224,7 @@ class AttnDecoderRNN(nn.Module):
                     #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t+1]), axis=1)
                     prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)**(1/(t+1))
             
-                print(prob_path)
+#                print(prob_path)
                 masks = prob_path >= prob_path_thresh
             
                 masked_alphas = alphas * masks[:,:,np.newaxis]
