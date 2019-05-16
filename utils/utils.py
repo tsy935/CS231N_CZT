@@ -179,10 +179,13 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
     y_pred = np.concatenate(y_pred, axis=0)
     labels = np.concatenate(labels, axis=0)
     
+
+    proportion = np.array(pd.read_csv(TRAIN_PROPORTION_PATH))
     # threshold search
     if not is_hard_label:
         if thresh_search:
-            thresh, _ = threshold_search(y_pred, labels, average)
+            # thresh, _ = threshold_search(y_pred, labels, average)
+            thresh, _ = threshold_search_proportional(y_pred, labels, average,proportion)
         else:
             if thresh is None:
                 thresh = 0.5
@@ -219,6 +222,34 @@ def threshold_search(y_pred, y_true, average):
     candidates = list(np.arange(0, 0.5, 0.01))
     for _, th in enumerate(candidates):
         yp = (y_pred > th).astype(int)
+        score.append(fbeta_score(y_true=y_true, y_pred=yp, beta=2, average=average))
+    score = np.array(score)
+    pm = score.argmax()
+    best_th, best_score = candidates[pm], score[pm]
+    return best_th, best_score
+
+
+def threshold_search_proportional(y_pred, y_true, average, proportion):
+    """
+        threshold search on a constant that works best so best_th*proportion[i]
+         of each label i overall is the best
+
+         input: 
+            y_pred:
+            y_true: one hot encoded
+            average:
+            proportions:
+
+    """
+    proportion/= np.sum(proportion)
+    proportion2d= np.repeat(proportion, y_true.shape[0])
+    proportion2d=proportion2d.reshape(y_true.shape,order='F')
+
+    score = []
+    candidates = list(np.arange(0, 1/np.max(proportion), 0.01))
+    for _, th in enumerate(candidates):
+
+        yp = (y_pred > th*proportion2d[y_true.astype(bool)].reshape(-1,1)).astype(int)
         score.append(fbeta_score(y_true=y_true, y_pred=yp, beta=2, average=average))
     score = np.array(score)
     pm = score.argmax()
