@@ -181,6 +181,11 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
     
 
     proportion = np.array(pd.read_csv(TRAIN_PROPORTION_PATH))
+    proportion = proportion[:,1]
+    proportion/= np.sum(proportion)
+    proportion2d= np.repeat(proportion, y_true.shape[0])
+    proportion2d=proportion2d.reshape(y_true.shape,order='F')
+
     # threshold search
     if not is_hard_label:
         if thresh_search:
@@ -194,7 +199,7 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
         y_labels = []
         for idx, orig_id in enumerate(orig_id_all):
             # curr_pred = (y_pred[idx] > thresh).astype(int)
-            curr_pred = (y_pred[idx] > thresh*proportion[labels[idx].astype(bool)]).astype(int)
+            curr_pred = (y_pred[idx] > thresh*proportion2d[labels[idx].astype(bool)].reshape(-1,1)).astype(int)
             writeout_dict[orig_id] = curr_pred
             y_pred_labels.append(curr_pred)
             y_labels.append(labels[idx])
