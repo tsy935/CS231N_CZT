@@ -117,7 +117,8 @@ class AttnDecoderRNN(nn.Module):
         
         # Load class proportions
         with open(TRAIN_PROPORTION_PATH, 'rb') as f:
-            class_prop = np.loadtxt(f, delimiter=',', skiprows=1)
+            self.class_prop = np.loadtxt(f, delimiter=',', skiprows=1)
+            self.class_prop = self.class_prop[:,1]
 
     def init_weights(self):
         self.fc1.bias.data.fill_(0)
@@ -227,12 +228,13 @@ class AttnDecoderRNN(nn.Module):
                 for t in range(max_label_len):
                     # Compute normalized path probability, so that it is invariant to path length
                     #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t]), axis=1)
-                    prob_path[:,t] = np.prod(soft_probs[:,:t], axis=1)**(1/t)
+                    prob_path[:,t] = np.prod(soft_probs[:,:t], axis=1)**(1/(t+1))
                     
                     # threshold to compare to
-                    l_t = y_tilt_num[:,:t] # (batch_size, t)                    
-                    curr_label_frac = LABEL_FRAC[l_t] # (batch_size, t) 
-                    thresholds[:,t] = np.prod(curr_label_frac * prob_path_thresh)**(1/t)
+                    l_t = y_tilt_num[:,:t].astype(int) # (batch_size, t)                    
+                    curr_class_prop = self.class_prop[l_t] # (batch_size, t)
+                    print(curr_class_prop)
+                    thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
             
 #                print(prob_path)
                 #masks = prob_path >= prob_path_thresh
