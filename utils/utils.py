@@ -193,7 +193,8 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
         y_pred_labels = []
         y_labels = []
         for idx, orig_id in enumerate(orig_id_all):
-            curr_pred = (y_pred[idx] > thresh).astype(int)
+            # curr_pred = (y_pred[idx] > thresh).astype(int)
+            curr_pred = (y_pred[idx] > thresh*proportion[labels[idx].astype(bool)]).astype(int)
             writeout_dict[orig_id] = curr_pred
             y_pred_labels.append(curr_pred)
             y_labels.append(labels[idx])
