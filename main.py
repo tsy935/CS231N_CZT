@@ -319,7 +319,6 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
             # Setup for forward
             imgs = imgs.to(device)
             labels = labels.to(device) # (batch_size, ncrosp, NUM_CLASSES)
-            hogs = hogs.to(device)
 
             # Forward
             if args.model_name == 'baseline' or args.model_name =='baseline_hog': 
@@ -327,6 +326,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 if args.model_name == 'baseline':
                     logits = model(imgs.view(-1, C, H, W))
                 else:
+                    hogs = hogs.to(device)
                     logits = model(imgs.view(-1, C, H, W), hogs) # fuse batch size and ncrops
                 
                 logits = logits.view(batch_size, ncrops, -1).mean(1) # shape (batch_size, NUM_CLASSES), averaged over crops
