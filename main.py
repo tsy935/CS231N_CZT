@@ -194,7 +194,7 @@ def train(args, device, train_save_dir):
                 # Setup for forward
                 imgs = imgs.to(device)
                 labels = labels.to(device)
-                hogs = hogs.to(device)
+                
 
                 # Zero out optimizer first
                 optimizer.zero_grad()
@@ -204,6 +204,7 @@ def train(args, device, train_save_dir):
                     if args.model_name=='baseline':
                         logits = model(imgs.view(-1, C, H, W)) # fuse batch size and ncrops
                     else:
+                        hogs = hogs.to(device)
                         logits = model(imgs.view(-1, C, H, W), hogs) # fuse batch size and ncrops
                     logits = logits.view(batch_size, ncrops, -1) # shape (batch_size, ncrops, NUM_CLASSES)
                 
