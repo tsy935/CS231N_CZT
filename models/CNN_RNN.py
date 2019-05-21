@@ -13,26 +13,28 @@ class EncoderCNN(nn.Module):
         super(EncoderCNN, self).__init__()
         self.sigmoid = nn.Sigmoid()
         
-        if args.use_pretrained:
-            self.resnet50 = vision.models.resnet50(pretrained=True)
+        if args.use_pretrained and (args.resnet_path is None):
+            self.resnet50 = vision.models.resnet50(pretrained=True) # load ImageNet pretrained weights
+        elif args.resnet_path is not None:
+            self.resnet50.load_state_dict(torch.load(args.resnet_path)) # load own pretrained weights
         else:
-            self.resnet50 = vision.models.resnet50(pretrained=False)
-            self.resnet50.load_state_dict(torch.load(args.load_path))
+            self.resnet50 = vision.models.resnet50(pretrained=False) # no pretraining
         
+        # Freeze all or some layers
         if args.feature_extracting:
-            self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)
-            num_ftrs = self.resnet50.fc.in_features
-            self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
-            
+            self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)         
         else:
             print('Fine-tune ResNet50 with {} layers freezed...'.format(args.nlayers_to_freeze))
             self.set_parameter_requires_grad(self.resnet50, 
                                              feature_extracting=False,
                                              nlayers_to_freeze=args.nlayers_to_freeze)
+            
+        # if load_path is None, need to modify the last FC layer from original ResNet50
+        if args.resnet_path is None:
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
             
-        # Remove linear and pool layers
+        # Exclude linear and pool layers
         modules = list(self.resnet50.children())[:-2]
         self.conv_features = nn.Sequential(*modules) # all layers until last conv layer
         
