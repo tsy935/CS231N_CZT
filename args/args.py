@@ -36,6 +36,10 @@ def get_args():
                         default=False,
                         action='store_true',
                         help='Use pre-trained model as feacture extracting only or not (fine-tune).')
+    parser.add_argument('--thresh_search',
+                        default=False,
+                        action='store_true',
+                        help='Whether perform threshold search at evaluation time. Only applicable to baselin & hogs.')
     parser.add_argument('--max_checkpoints',
                         type=int,
                         default=5,
@@ -53,6 +57,10 @@ def get_args():
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+    parser.add_argument('--resnet_path',
+                        type=str,
+                        default=None,
+                        help='Path to load a trained ResNet checkpoint.')
     parser.add_argument('--train_batch_size',
                         type=int,
                         default=32,

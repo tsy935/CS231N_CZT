@@ -13,26 +13,28 @@ class EncoderCNN(nn.Module):
         super(EncoderCNN, self).__init__()
         self.sigmoid = nn.Sigmoid()
         
-        if args.use_pretrained:
-            self.resnet50 = vision.models.resnet50(pretrained=True)
+        if args.use_pretrained and (args.resnet_path is None):
+            self.resnet50 = vision.models.resnet50(pretrained=True) # load ImageNet pretrained weights
+        elif args.resnet_path is not None:
+            self.resnet50.load_state_dict(torch.load(args.resnet_path)) # load own pretrained weights
         else:
-            self.resnet50 = vision.models.resnet50(pretrained=False)
-            self.resnet50.load_state_dict(torch.load(args.load_path))
+            self.resnet50 = vision.models.resnet50(pretrained=False) # no pretraining
         
+        # Freeze all or some layers
         if args.feature_extracting:
-            self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)
-            num_ftrs = self.resnet50.fc.in_features
-            self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
-            
+            self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)         
         else:
             print('Fine-tune ResNet50 with {} layers freezed...'.format(args.nlayers_to_freeze))
             self.set_parameter_requires_grad(self.resnet50, 
                                              feature_extracting=False,
                                              nlayers_to_freeze=args.nlayers_to_freeze)
+            
+        # if load_path is None, need to modify the last FC layer from original ResNet50
+        if args.resnet_path is None:
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
             
-        # Remove linear and pool layers
+        # Exclude linear and pool layers
         modules = list(self.resnet50.children())[:-2]
         self.conv_features = nn.Sequential(*modules) # all layers until last conv layer
         
@@ -114,6 +116,11 @@ class AttnDecoderRNN(nn.Module):
         
         # Initialize weights
         self.init_weights()
+        
+        # Load class proportions
+        with open(TRAIN_PROPORTION_PATH, 'rb') as f:
+            self.class_prop = np.loadtxt(f, delimiter=',', skiprows=1)
+            self.class_prop = self.class_prop[:,1]
 
     def init_weights(self):
         self.fc1.bias.data.fill_(0)
@@ -223,9 +230,20 @@ class AttnDecoderRNN(nn.Module):
                 hard_labels = np.zeros((batch_size, NUM_CLASSES))
                 for t in range(max_label_len):
                     # Compute normalized path probability, so that it is invariant to path length
-                    #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t+1]), axis=1)
-                    prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)**(1/(t+1))
-                masks = prob_path >= prob_path_thresh
+                    #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t]), axis=1)
+                    prob_path[:,t] = np.prod(soft_probs[:,:t], axis=1)**(1/(t+1))
+                    
+                    # threshold to compare to
+                    l_t = y_tilt_num[:,:t].astype(int) # (batch_size, t)                    
+                    curr_class_prop = self.class_prop[l_t] # (batch_size, t)
+                    print(curr_class_prop)
+                    thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
+            
+#                print(prob_path)
+                #masks = prob_path >= prob_path_thresh
+                # Use different thresholds for different classes
+                masks = prob_path >= thresholds
+
                 masked_alphas = alphas * masks[:,:,np.newaxis]
                 for i in range(batch_size):
                     curr_labels = y_tilt_num[i, masks[i,:]].astype(int)
