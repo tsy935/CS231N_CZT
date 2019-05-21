@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision as vision
 import numpy as np
-from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN, TRAIN_PROPORTION_PATH
+from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN
 
 class EncoderCNN(nn.Module):
     """
@@ -137,7 +137,7 @@ class AttnDecoderRNN(nn.Module):
 
     def forward(self, v_prob, v_feat, device, max_label_len=10, 
                 prob_path_thresh=1e-6, loss_fn=None, labels=None, 
-                is_eval=False, beam_search=False, beam_size=3):
+                is_eval=False, beam_search=False, beam_size=1):
         """
         Args:
             v_prob: predicted probability from CNN, (batch_size, NUM_CLASSES)
@@ -155,13 +155,13 @@ class AttnDecoderRNN(nn.Module):
         """
         
         if is_eval and beam_search:
-            hard_labels, masked_alphas, total_loss = self.beam_search(v_prob, v_feat, 
-                                                                       device, max_label_len=max_label_len,
-                                                                       prob_path_thresh=prob_path_thresh,
-                                                                       labels=labels, beam_size=beam_size)
+            hard_labels, total_loss, masked_alphas = self.beam_search(v_prob, v_feat, 
+                                                                      device, max_label_len,
+                                                                      prob_path_thresh,
+                                                                      labels, beam_size)
             
         else: 
-            # No beam search
+            #No beam search
             batch_size = v_feat.size(0)
             encoder_dim = v_feat.size(-1)
         
@@ -188,23 +188,25 @@ class AttnDecoderRNN(nn.Module):
                 z, alpha = self.attn(v_feat, h)
                 gate = self.sigmoid(self.f_beta(h))
                 z = gate * z
-         
                 # Pass through prediction layer
-                h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
+                h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))              
                 fc1_out = self.fc1(self.dropout(h))
                 logit = self.fc2(self.dropout(fc1_out)) # (batch_size, NUM_CLASSES)
-                probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)            
+                probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)
                 alphas[:,t,:] = alpha.detach().cpu().numpy()
-                
+
                 # Only choose from the candidate pool to prevent duplicated labels
                 ps = probs.detach().cpu().numpy() # (batch_size, NUM_CLASSES)
                 ps *= C # mask the probabilities with the candidate pool
                 l = np.argmax(ps, axis=1) # current time step hard label, shape (batch_size,)
             
                 prob_max = np.asarray([ps[idx,l[idx]] for idx in range(batch_size)])
-                y_tilt[:,l] = 1 # add current time step hard prediction
+                for idx in range(batch_size):
+                    y_tilt[idx,int(l[idx])]=1
+                    C[idx,int(l[idx])] = 0. # remove newly predicted label from candidate pool
+                    
                 y_tilt_num[:,t] = l
-                C[:,l] = 0. # remove newly predicted label from candidate pool
+                
             
                 soft_probs[:,t] = prob_max
             
@@ -213,7 +215,7 @@ class AttnDecoderRNN(nn.Module):
                     # Note that in the original paper, it performs GD at each time step
                     # TODO: Can also try SGD at each time step
                     loss += loss_fn(logit, labels.view(-1, NUM_CLASSES))
-            
+                
                 v_pred = probs
         
             if labels is not None:
@@ -226,7 +228,6 @@ class AttnDecoderRNN(nn.Module):
             if is_eval:
                 prob_path = np.ones((batch_size, max_label_len))
                 hard_labels = np.zeros((batch_size, NUM_CLASSES))
-                thresholds = np.ones((batch_size, max_label_len))
                 for t in range(max_label_len):
                     # Compute normalized path probability, so that it is invariant to path length
                     #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t]), axis=1)
@@ -242,7 +243,7 @@ class AttnDecoderRNN(nn.Module):
                 #masks = prob_path >= prob_path_thresh
                 # Use different thresholds for different classes
                 masks = prob_path >= thresholds
-        
+
                 masked_alphas = alphas * masks[:,:,np.newaxis]
                 for i in range(batch_size):
                     curr_labels = y_tilt_num[i, masks[i,:]].astype(int)
@@ -250,11 +251,9 @@ class AttnDecoderRNN(nn.Module):
             else:
                 hard_labels = y_tilt.detach().cpu().numpy()
                 masked_alphas = alphas
-        
         return hard_labels, total_loss, masked_alphas
 
- 
-    def beam_search(v_prob, v_feat, device, max_label_len=10,
+    def beam_search(self, v_prob, v_feat, device, max_label_len=10,
                     prob_path_thresh=1e-3, labels=None, beam_size=3):
         """
         Args:
@@ -272,9 +271,123 @@ class AttnDecoderRNN(nn.Module):
         """
         # Refer to above non-beam search implementation and 
         # https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Image-Captioning/blob/master/caption.py
-        # Ideally the beam search should also be operated in batch, otherwise might be too slow
+        # Ideally the beam search should also be operated in batch, otherwise might be too slow   
+        batch_size = v_feat.size(0)
+        enc_image_size = v_feat.size(1)
+        encoder_dim = v_feat.size(-1)
+        v_feat = v_feat.view(batch_size, -1, encoder_dim) # (batch_size, num_pixels, encoder_dim)
+        num_pixels = v_feat.size(1)
+        k = beam_size
+        # Start decoding
+        step = 0
+        # Initialize LSTM state
+        h, c = self.init_hidden_state(v_feat)  # (batch_size, decoder_dim)
+        # Initialize v_pred
+        v_pred = v_prob # (batch_size, NUM_CLASSES)
+        # Initialize candidate pool
+        C = np.ones((batch_size, k, max_label_len, NUM_CLASSES)) # (batch_size, NUM_CLASSES)       
+        y_tilt = torch.zeros(batch_size, NUM_CLASSES).to(device)
+        y_tilt_num = np.zeros((batch_size, max_label_len))
+        alphas = np.zeros((batch_size, max_label_len, num_pixels)) # for visualization purpose
+        soft_probs = np.zeros((batch_size, k, max_label_len))
         
-    
+        while True:
+            if step == 0:
+                z, alpha = self.attn(v_feat, h)       
+                gate = self.sigmoid(self.f_beta(h))  # gating scalar, (s, encoder_dim)
+                z = gate * z
+                h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
+                fc1_out = self.fc1(self.dropout(h))
+                logit = self.fc2(self.dropout(fc1_out)) # (batch_size, NUM_CLASSES)
+                probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)
+                alphas[:,step,:] = alpha.detach().cpu().numpy()
+                # Only choose from the candidate pool to prevent duplicated labels
+                ps = np.zeros((batch_size, k, max_label_len, NUM_CLASSES))
+                l = np.zeros((batch_size, k))
+                y_tilt_beam = torch.zeros(batch_size, k, max_label_len, NUM_CLASSES)
+                y_tilt_num_beam = np.zeros((batch_size, k, max_label_len, max_label_len))
+                v_pred_beam = torch.zeros(batch_size, k, max_label_len, NUM_CLASSES)
+                h_beam = torch.zeros(batch_size, k, max_label_len, h.shape[1])
+                c_beam = torch.zeros(batch_size, k, max_label_len, c.shape[1])
+                alphas_beam = np.zeros((batch_size, k, max_label_len, num_pixels))
+                for ik in range(k):
+                    v_pred_beam[:,ik,step,:] = probs
+                    h_beam[:,ik,step,:] = h
+                    c_beam[:,ik,step,:] = c
+                    alphas_beam[:,ik,step,:] = alphas[:,step,:]
+                    ps[:,ik,step,:] = probs.detach().cpu().numpy()
+                ps[:,:,step,:] *= C[:,:,step,:] # mask the probabilities with the candidate pool
+                for ik in range(k):
+                    for idx in range(batch_size):
+                        l[idx,ik] = np.argsort(ps[idx,ik,step,:])[NUM_CLASSES-ik-1]
+                        y_tilt[idx,int(l[idx,ik])] = 1
+                        y_tilt_num[idx,step] = int(l[idx,ik])
+                        C[idx,ik,step,int(l[idx,ik])] = 0
+                    prob_max = np.asarray([ps[idx,ik,step,int(l[idx,ik])] for idx in range(batch_size)])
+                    y_tilt_beam[:,ik,step,:] = y_tilt
+                    y_tilt_num_beam[:,ik,step,:] = y_tilt_num
+                    soft_probs[:,ik,step] = prob_max
+
+            else:
+                for ik in range(k):
+                    h = h_beam[:,ik,step-1,:].to(device)
+                    c = c_beam[:,ik,step-1,:].to(device)
+                    z, alpha = self.attn(v_feat, h)                  
+                    gate = self.sigmoid(self.f_beta(h))  # gating scalar, (s, encoder_dim)
+                    z = gate * z                      
+                    v_pred = v_pred_beam[:,ik,step-1,:].to(device)
+                    y_tilt = y_tilt_beam[:,ik,step-1,:].to(device)
+                    h, c = self.decode_step(torch.cat([v_pred, z, y_tilt], dim=1), (h, c))
+                    fc1_out = self.fc1(self.dropout(h))
+                    logit = self.fc2(self.dropout(fc1_out)) # (batch_size, NUM_CLASSES)
+                    probs = self.sigmoid(logit) # (batch_size, NUM_CLASSES)          
+                    alphas_beam[:,ik,step,:] = alpha.detach().cpu().numpy()
+                    v_pred_beam[:,ik,step-1,:] = probs
+                    h_beam[:,ik,step-1,:] = h
+                    c_beam[:,ik,step-1,:] = c
+                    ps[:,ik,step-1,:] = probs.detach().cpu().numpy()
+                    for ic in range(NUM_CLASSES):
+                        ps[:,ik,step-1,ic] *= soft_probs[:,ik,step-1]
+                ps[:,:,step-1,:] *= C[:,:,step-1,:]
+                for idx in range(batch_size):
+                    ps_temp = ps[idx,:,step-1,:].reshape((-1,))
+                    y_tilt_temp = y_tilt_beam[idx,:,:]
+                    for ik in range(k):
+                        l[idx,ik] = np.argsort(ps_temp)[ps_temp.shape[0]-ik-1]
+                        prev_inds = int(l[idx,ik]) // NUM_CLASSES
+                        next_inds = int(l[idx,ik]) % NUM_CLASSES
+                        v_pred_beam[idx,ik,step,:] = v_pred_beam[idx,prev_inds,step-1,:]
+                        h_beam[idx,ik,step,:] = h_beam[idx,prev_inds,step-1,:]
+                        c_beam[idx,ik,step,:] = c_beam[idx,prev_inds,step-1,:]   
+                        y_tilt_beam[idx,ik,step,:] =  y_tilt_beam[idx,prev_inds,step-1,:]
+                        y_tilt_beam[idx,ik,step,next_inds] = 1                        
+                        y_tilt_num_beam[idx,ik,step,:] = y_tilt_num_beam[idx,prev_inds,step-1,:]
+                        y_tilt_num_beam[idx,ik,step,step] = next_inds
+                        C[idx,ik,step,:] = C[idx,prev_inds,step-1,:] 
+                        C[idx,ik,step,next_inds] = 0
+                        ps[idx,ik,step,:] = ps[idx,prev_inds,step-1,:]
+                        prob_max = ps_temp[int(l[idx,ik])]
+                        soft_probs[idx,ik,step] = prob_max
+                        alphas[idx,step,:] = alphas_beam[idx,prev_inds,step,:]
+                    #print(y_tilt_num_beam[idx,:,:,:])
+                    #print(soft_probs[idx,:,:])                    
+            step += 1
+            # Break if things have been going on too long
+            if step >= max_label_len:
+                break
+        prob_path = np.ones((batch_size, max_label_len))
+        hard_labels = np.zeros((batch_size, NUM_CLASSES))
+        for t in range(max_label_len):
+            prob_path[:,t] = soft_probs[:,0,t]**(1/(t+1)) 
+        masks = prob_path >= prob_path_thresh
+        masked_alphas = alphas * masks[:,:,np.newaxis]
+        y_tilt_num = y_tilt_num_beam[:,0,max_label_len-1,:]
+        for idx in range(batch_size):
+            curr_labels = y_tilt_num[idx, masks[idx,:]].astype(int)
+            hard_labels[idx, curr_labels] = 1
+        total_loss = None
+        return hard_labels, total_loss, masked_alphas
+
     
 class CNN_RNN(nn.Module):
     """
