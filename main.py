@@ -374,15 +374,13 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
     
     # if label is available
     if labels is not None:
-        if is_test == False and not(is_hard_label): # only threshold search on validation set
-            thresh_search = True
+        if args.thresh_search and not(is_hard_label): # only threshold search on validation set
             thresh = None
         else:
-            thresh_search = False
             thresh = best_thresh
         scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
                                                      orig_id_all, is_test=False, 
-                                                     thresh_search=thresh_search, thresh=thresh, 
+                                                     thresh_search=args.thresh_search, thresh=thresh, 
                                                      is_hard_label=is_hard_label)
         results_list = [('Loss', nll_meter.avg),
                         ('F2', scores_dict['F2']),

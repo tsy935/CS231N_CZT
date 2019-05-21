@@ -12,6 +12,7 @@ python ./main.py \
   --metric_avg samples \
   --max_pos_weight 10 \
   --feature_extracting \
+  --thresh_search \
   --load_path /mnt/disks/large/output/baseline_featureExtract/train/train-10/best.pth.tar \
   --best_val_results /mnt/disks/large/output/baseline_featureExtract/train/train-10/best_val_results \
   --save_dir /mnt/disks/large/output/baseline_featureExtract
