@@ -214,7 +214,8 @@ def train(args, device, train_save_dir):
                     loss, _, _ = model(imgs.view(-1, C, H, W), 
                                        labels=labels.view(-1, NUM_CLASSES), 
                                        loss_fn=loss_fn,
-                                       is_eval=False) # fuse batch size and ncrops
+                                       is_eval=False,
+                                       test_only=False) # fuse batch size and ncrops
                     loss_val = loss.item()
 
                 # Backward
@@ -344,15 +345,18 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
                                              labels=labels, 
                                              loss_fn=loss_fn,
-                                             is_eval=True) # fuse batch size and ncrops
+                                             is_eval=True,
+                                             test_only=is_test) # fuse batch size and ncrops
                 y_pred_crops = y_pred                
                 if labels is not None:
                     labels = labels[:,0,:]
                     # Predicted labels are the union of all crops
                     y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)
                     y_pred[y_pred > 1] = 1 # (batch_size, NUM_CLASSES)
-                    nll_meter.update(loss.item(), batch_size)
                     y_true_all.append(labels.cpu().numpy())
+                    if loss is not None:
+                        nll_meter.update(loss.item(), batch_size)
+                    
                 else:
                     # Predicted labels are the union of all crops
                     y_pred = y_pred.reshape(batch_size, ncrops, -1).sum(1)

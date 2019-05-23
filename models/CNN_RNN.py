@@ -411,9 +411,12 @@ class CNN_RNN(nn.Module):
         self.encoder = EncoderCNN(args)
         self.decoder = AttnDecoderRNN(ATTN_DIM, DECODER_DIM, ENCODER_DIM, dropout=args.dropout)
     
-    def forward(self, x, labels=None, loss_fn=None, is_eval=False):
+    def forward(self, x, labels=None, loss_fn=None, is_eval=False, test_only=False):
         v_prob, v_feat = self.encoder(x)
-
+        if test_only:
+            beam_search = self.args.beam_search
+        else:
+            beam_search = False
         hard_labels, total_loss, alphas = self.decoder(v_prob, 
                                                        v_feat, 
                                                        self.device, 
@@ -421,8 +424,8 @@ class CNN_RNN(nn.Module):
                                                        prob_path_thresh=self.args.prob_path_thresh, 
                                                        loss_fn=loss_fn,
                                                        labels=labels, 
-                                                       is_eval=is_eval, 
-                                                       beam_search=self.args.beam_search,
+                                                       is_eval=is_eval,
+                                                       beam_search=beam_search,
                                                        beam_size=self.args.beam_size)
 
         return total_loss, hard_labels, alphas

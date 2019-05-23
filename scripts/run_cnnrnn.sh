@@ -8,9 +8,9 @@ python ./main.py \
   --split test \
   --use_pretrained \
   --model_name cnn-rnn \
-  --lr_init 1e-4 \
+  --lr_init 5e-4 \
   --l2_wd 1e-5 \
-  --num_epochs 10 \
+  --num_epochs 15 \
   --train_batch_size 32 \
   --loss_fn_name BCE \
   --write_outputs \
@@ -18,6 +18,5 @@ python ./main.py \
   --metric_avg samples \
   --max_pos_weight 10 \
   --feature_extracting \
-  --prob_path_thresh 1e-2 \
-  --load_path /mnt/disks/large/output/cnnrnn/train/train-06/best.pth.tar \
+  --prob_path_thresh 2.5 \
   --save_dir /mnt/disks/large/output/cnnrnn
