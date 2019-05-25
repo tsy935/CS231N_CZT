@@ -14,4 +14,5 @@ python ./main.py \
   --feature_extracting \
   --load_path  /mnt/disks/large/output/baseline_hog/train/train-03/best.pth.tar \
   --best_val_results /mnt/disks/large/output/baseline_hog/train/train-03/best_val_results\
-  --save_dir /mnt/disks/large/output/baseline_hog_threshold_search_prop
+  --save_dir /mnt/disks/large/output/baseline_hog_threshold_search_prop\
+  --baseline_thresh_prop_power 0.05
