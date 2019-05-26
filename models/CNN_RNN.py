@@ -16,7 +16,21 @@ class EncoderCNN(nn.Module):
         if args.use_pretrained and (args.resnet_path is None):
             self.resnet50 = vision.models.resnet50(pretrained=True) # load ImageNet pretrained weights
         elif args.resnet_path is not None:
-            self.resnet50.load_state_dict(torch.load(args.resnet_path)) # load own pretrained weights
+            # If we want to use already self-trained resnet50 including modified last FC layer
+            self.resnet50 = vision.models.resnet50(pretrained=True)
+            num_ftrs = self.resnet50.fc.in_features
+            self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+            
+            checkpoint_dict = torch.load(args.resnet_path)
+            pretrained_dict = checkpoint_dict['model_state']
+            model_dict = self.resnet50.state_dict()
+            # Filter out unnecessary keys
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+            # Overwrite entries in the existing state dict
+            model_dict.update(pretrained_dict)
+            # Load the new state dict
+            self.resnet50.load_state_dict(model_dict)
+            
         else:
             self.resnet50 = vision.models.resnet50(pretrained=False) # no pretraining
         
@@ -29,7 +43,7 @@ class EncoderCNN(nn.Module):
                                              feature_extracting=False,
                                              nlayers_to_freeze=args.nlayers_to_freeze)
             
-        # if load_path is None, need to modify the last FC layer from original ResNet50
+        # if resnet_path is None, need to modify the last FC layer from original ResNet50
         if args.resnet_path is None:
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
