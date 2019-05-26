@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision as vision
 import numpy as np
-from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN
+from constants.constants import NUM_CLASSES, ATTN_DIM, DECODER_DIM, ENCODER_DIM, MAX_LABEL_LEN, TRAIN_PROPORTION_PATH
 
 class EncoderCNN(nn.Module):
     """
@@ -16,7 +16,21 @@ class EncoderCNN(nn.Module):
         if args.use_pretrained and (args.resnet_path is None):
             self.resnet50 = vision.models.resnet50(pretrained=True) # load ImageNet pretrained weights
         elif args.resnet_path is not None:
-            self.resnet50.load_state_dict(torch.load(args.resnet_path)) # load own pretrained weights
+            # If we want to use already self-trained resnet50 including modified last FC layer
+            self.resnet50 = vision.models.resnet50(pretrained=True)
+            num_ftrs = self.resnet50.fc.in_features
+            self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+            
+            checkpoint_dict = torch.load(args.resnet_path)
+            pretrained_dict = checkpoint_dict['model_state']
+            model_dict = self.resnet50.state_dict()
+            # Filter out unnecessary keys
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+            # Overwrite entries in the existing state dict
+            model_dict.update(pretrained_dict)
+            # Load the new state dict
+            self.resnet50.load_state_dict(model_dict)
+            
         else:
             self.resnet50 = vision.models.resnet50(pretrained=False) # no pretraining
         
@@ -29,7 +43,7 @@ class EncoderCNN(nn.Module):
                                              feature_extracting=False,
                                              nlayers_to_freeze=args.nlayers_to_freeze)
             
-        # if load_path is None, need to modify the last FC layer from original ResNet50
+        # if resnet_path is None, need to modify the last FC layer from original ResNet50
         if args.resnet_path is None:
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
@@ -228,20 +242,22 @@ class AttnDecoderRNN(nn.Module):
             if is_eval:
                 prob_path = np.ones((batch_size, max_label_len))
                 hard_labels = np.zeros((batch_size, NUM_CLASSES))
+                thresholds = np.zeros((batch_size, max_label_len))
                 for t in range(max_label_len):
                     # Compute normalized path probability, so that it is invariant to path length
                     #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t]), axis=1)
-                    prob_path[:,t] = np.prod(soft_probs[:,:t], axis=1)**(1/(t+1))
+                    prob_path[:,t] = np.prod(soft_probs[:,:t+1], axis=1)**(1/(t+1))
                     
                     # threshold to compare to
-                    l_t = y_tilt_num[:,:t].astype(int) # (batch_size, t)                    
+                    l_t = y_tilt_num[:,:t+1].astype(int) # (batch_size, t)                    
                     curr_class_prop = self.class_prop[l_t] # (batch_size, t)
-                    print(curr_class_prop)
+                    #print(curr_class_prop)
                     thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
             
 #                print(prob_path)
                 #masks = prob_path >= prob_path_thresh
                 # Use different thresholds for different classes
+                #print(thresholds)
                 masks = prob_path >= thresholds
 
                 masked_alphas = alphas * masks[:,:,np.newaxis]
@@ -271,7 +287,7 @@ class AttnDecoderRNN(nn.Module):
         """
         # Refer to above non-beam search implementation and 
         # https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Image-Captioning/blob/master/caption.py
-        # Ideally the beam search should also be operated in batch, otherwise might be too slow   
+        # Ideally the beam search should also be operated in batch, otherwise might be too slow           
         batch_size = v_feat.size(0)
         enc_image_size = v_feat.size(1)
         encoder_dim = v_feat.size(-1)
@@ -290,6 +306,7 @@ class AttnDecoderRNN(nn.Module):
         y_tilt_num = np.zeros((batch_size, max_label_len))
         alphas = np.zeros((batch_size, max_label_len, num_pixels)) # for visualization purpose
         soft_probs = np.zeros((batch_size, k, max_label_len))
+        thresholds = np.zeros((batch_size, max_label_len))
         
         while True:
             if step == 0:
@@ -327,6 +344,9 @@ class AttnDecoderRNN(nn.Module):
                     y_tilt_beam[:,ik,step,:] = y_tilt
                     y_tilt_num_beam[:,ik,step,:] = y_tilt_num
                     soft_probs[:,ik,step] = prob_max
+                l_t = y_tilt_num_beam[:,0,step,:step+1].astype(int) # (batch_size, t)
+                curr_class_prop = self.class_prop[l_t] # (batch_size, t)
+                thresholds[:,step] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(step+1))
 
             else:
                 for ik in range(k):
@@ -369,6 +389,10 @@ class AttnDecoderRNN(nn.Module):
                         prob_max = ps_temp[int(l[idx,ik])]
                         soft_probs[idx,ik,step] = prob_max
                         alphas[idx,step,:] = alphas_beam[idx,prev_inds,step,:]
+                l_t = y_tilt_num_beam[:,0,step,:step+1].astype(int) # (batch_size, t)
+                curr_class_prop = self.class_prop[l_t] # (batch_size, t)
+                thresholds[:,step] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(step+1))
+                #print(thresholds[0,:])
                     #print(y_tilt_num_beam[idx,:,:,:])
                     #print(soft_probs[idx,:,:])                    
             step += 1
@@ -379,7 +403,8 @@ class AttnDecoderRNN(nn.Module):
         hard_labels = np.zeros((batch_size, NUM_CLASSES))
         for t in range(max_label_len):
             prob_path[:,t] = soft_probs[:,0,t]**(1/(t+1)) 
-        masks = prob_path >= prob_path_thresh
+        masks = prob_path >= thresholds
+        #print(thresholds)
         masked_alphas = alphas * masks[:,:,np.newaxis]
         y_tilt_num = y_tilt_num_beam[:,0,max_label_len-1,:]
         for idx in range(batch_size):
@@ -400,9 +425,12 @@ class CNN_RNN(nn.Module):
         self.encoder = EncoderCNN(args)
         self.decoder = AttnDecoderRNN(ATTN_DIM, DECODER_DIM, ENCODER_DIM, dropout=args.dropout)
     
-    def forward(self, x, labels=None, loss_fn=None, is_eval=False):
+    def forward(self, x, labels=None, loss_fn=None, is_eval=False, test_only=False):
         v_prob, v_feat = self.encoder(x)
-
+        if test_only:
+            beam_search = self.args.beam_search
+        else:
+            beam_search = False
         hard_labels, total_loss, alphas = self.decoder(v_prob, 
                                                        v_feat, 
                                                        self.device, 
@@ -410,8 +438,8 @@ class CNN_RNN(nn.Module):
                                                        prob_path_thresh=self.args.prob_path_thresh, 
                                                        loss_fn=loss_fn,
                                                        labels=labels, 
-                                                       is_eval=is_eval, 
-                                                       beam_search=self.args.beam_search,
+                                                       is_eval=is_eval,
+                                                       beam_search=beam_search,
                                                        beam_size=self.args.beam_size)
 
         return total_loss, hard_labels, alphas
