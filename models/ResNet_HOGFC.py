@@ -18,22 +18,33 @@ class ResNet50_HOGFC(nn.Module):
         super(ResNet50_HOGFC, self).__init__()
         
         
-        if args.use_pretrained:
+        if args.use_pretrained and (args.resnet_path is None):
+            self.resnet50 = vision.models.resnet50(pretrained=True) # load ImageNet pretrained weights
+        elif args.use_pretrained and (args.resnet_path is not None):
+            # If we want to use already self-trained resnet50 including modified last FC layer
             self.resnet50 = vision.models.resnet50(pretrained=True)
-            #self.resnet50 = vision.models.densenet121(pretrained=True)
+            num_ftrs = self.resnet50.fc.in_features
+            self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
+            
+            checkpoint_dict = torch.load(args.resnet_path)
+            pretrained_dict = checkpoint_dict['model_state']
+            model_dict = self.resnet50.state_dict()
+            # Filter out unnecessary keys
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+            # Overwrite entries in the existing state dict
+            model_dict.update(pretrained_dict)
+            # Load the new state dict
+            self.resnet50.load_state_dict(model_dict)
+            
         else:
-            self.resnet50 = vision.models.resnet50(pretrained=False)
-            self.resnet50.load_state_dict(torch.load(args.load_path))
+            self.resnet50 = vision.models.resnet50(pretrained=False) # no pretraining
+
+
         
         if args.feature_extracting:
             self.set_parameter_requires_grad(self.resnet50, feature_extracting=True, nlayers_to_freeze=None)
             num_ftrs = self.resnet50.fc.in_features
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
-            #self.resnet50.fc = MultiLayerPerceptron(num_ftrs)
-            
-            # TEMP: densenet121
-            #num_ftrs = self.resnet50.classifier.in_features
-            #self.resnet50.classifier = MultiLayerPerceptron(num_ftrs)
             
         else:
             print('Fine-tune ResNet50 with {} layers freezed...'.format(args.nlayers_to_freeze))

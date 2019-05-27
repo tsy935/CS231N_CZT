@@ -13,8 +13,8 @@ from PIL import Image
 from pathlib import Path
 from constants.constants import NUM_CLASSES, MEAN, STD, CULTURE_LABELS, NUM_CROPS
 import torch
-import cv2 #for hog implementation
-from skimage.feature import hog
+from skimage.feature import hog, daisy
+from skimage.color import rgb2gray
     
 
 class IMetDataset_HOG(data.Dataset):
@@ -120,7 +120,8 @@ class IMetDataset_HOG(data.Dataset):
             label_tensor = None
             #pos_weights = None
         
-        hog_tensor = self.compute_HOG(img_tensor)
+        # hog_tensor = self.compute_HOG(img_tensor)
+        hog_tensor = self.compute_HOG_Daisy(img_tensor)
         
 #        print('Shape of hog_tensor:{}'.format(hog_tensor.size()))
         example = (img_tensor,
@@ -179,69 +180,18 @@ class IMetDataset_HOG(data.Dataset):
         print(pos_weights)
         return pos_weights
     
-#     def compute_HOG(self,image_tensor):
-#         """
-#         with each image, computes its HOG descriptor using cv2 library
-#         https://stackoverflow.com/questions/6090399/get-hog-image-features-from-opencv-python
-#         new goal:
-#         take image tensor and output hog for each image
-        
-#         input: (6, C, H, W)
-#         returns: (6, n)
-#         """
-# #        image = cv2.imread(image_dir,0)
-#         image_idx = image_tensor.size()[0] #size (6, C, H, W)
-#         hogs = list()
-#         for i in range(image_idx):
-#             image = image_tensor[i,:,:,:]
-#             image = image.numpy()
-
-#             # TODO: unnormalize image and convert to int using MEAN and STD
-#             x = np.zeros_like(image)
-#             x[0, :, :] = image[0, :, :] * STD[0] + MEAN[0]
-#             x[1, :, :] = image[1, :, :] * STD[1] + MEAN[1]
-#             x[2, :, :] = image[2, :, :] * STD[2] + MEAN[2]
-#             x = x*255
-#             cv_x = x.astype(np.uint8)
-#             print(cv_x.dtype)
-#             winSize = (224,224)
-#             blockSize = (16,16)
-#             blockStride = (8,8)
-#             cellSize = (8,8)
-#             nbins = 9
-#             derivAperture = 1
-#             winSigma = 4.
-#             histogramNormType = 0
-#             L2HysThreshold = 2.0000000000000001e-01
-#             gammaCorrection = 0
-#             nlevels = 64
-#             hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins,derivAperture,winSigma,
-#                                     histogramNormType,L2HysThreshold,gammaCorrection,nlevels)
-#             #compute(img[, winStride[, padding[, locations]]]) -> descriptors
-#             winStride = (8,8)
-#             padding = (8,8)
-#             locations = ((10,20),)
-#             # 27*27*36
-#             hist = hog.compute(cv_x,winStride,padding,locations)
-#             hogs.append(hist)
-#             hogs_tensor = torch.stack(hogs, dim=0)
-        
-        
-#         return hogs_tensor
 
     def compute_HOG(self,image_tensor):
         """
-        with each image, computes its HOG descriptor using cv2 library
-        https://stackoverflow.com/questions/6090399/get-hog-image-features-from-opencv-python
-        new goal:
-        take image tensor and output hog for each image
+        with each image, computes its HOG descriptor 
+        implementation: https://scikit-image.org/docs/dev/api/skimage.feature.html#skimage.feature.hog
         
         input: (6, C, H, W)
         returns: (6, n)
         """
-#        image = cv2.imread(image_dir,0)
         image_idx = image_tensor.size()[0] #size (6, C, H, W)
         hogs = list()
+        # iterate through each generated image
         for i in range(image_idx):
             image = image_tensor[i,:,:,:]
             image = image.numpy()
@@ -257,13 +207,108 @@ class IMetDataset_HOG(data.Dataset):
 
             # 27*27*36
             hist = hog(cv_x, orientations=8, pixels_per_cell=(16, 16),
-                    cells_per_block=(1, 1), visualize=False, feature_vector=True, multichannel=True)
+                    cells_per_block=(3, 3), visualize=False, feature_vector=True, multichannel=True)
             hist = torch.from_numpy(hist)
             hogs.append(hist)
             hogs_tensor = torch.stack(hogs, dim=0)
         
         
         return hogs_tensor
+
+    def compute_Daisy(self,image_tensor):
+        """
+        with each image, computes its daisy descriptor
+        https://scikit-image.org/docs/dev/api/skimage.feature.html#skimage.feature.daisy
+        
+        input: (6, C, H, W)
+        returns: (6, n)
+        """
+        image_idx = image_tensor.size()[0] #size (6, C, H, W)
+        daisys = list()
+        # iterate through each generated image
+        for i in range(image_idx):
+            image = image_tensor[i,:,:,:]
+            image = image.numpy()
+            # revert normalization
+            x = np.zeros_like(image)
+            x[0, :, :] = image[0, :, :] * STD[0] + MEAN[0]
+            x[1, :, :] = image[1, :, :] * STD[1] + MEAN[1]
+            x[2, :, :] = image[2, :, :] * STD[2] + MEAN[2]
+            x = x*255
+            cv_x = x.astype(np.uint8)
+            # transpose dimensions since hog implementation requires image to be  (M, N[, C]) ndarray
+            cv_x = np.transpose(cv_x, (1,2,0))
+
+            # convert RGB to grayscale
+            grey = rgb2gray(cv_x)
+
+            # 27*27*36
+            daisy = daisy(grey,step=180, radius=58, rings=2, histograms=6,orientations=8, visualize=False)
+
+            # flatten to vector
+            P,Q,R =  daisy.shape
+            daisy = daisy.reshape((P*Q*R,))
+            print("daisy shape is {}".format(daisy.shape))
+            daisy = torch.from_numpy(daisy)
+
+            daisys.append(daisy)
+            daisys_tensor = torch.stack(daisys, dim=0)
+        
+        
+        return daisys_tensor
+
+
+    def compute_HOG_Daisy(self,image_tensor):
+        """
+        with each image, computes its daisy descriptor
+        https://scikit-image.org/docs/dev/api/skimage.feature.html#skimage.feature.daisy
+        
+        input: (6, C, H, W)
+        returns: (6, n)
+        """
+        image_idx = image_tensor.size()[0] #size (6, C, H, W)
+        hogs_daisys = list()
+        # iterate through each generated image
+        for i in range(image_idx):
+            image = image_tensor[i,:,:,:]
+            image = image.numpy()
+            # revert normalization
+            x = np.zeros_like(image)
+            x[0, :, :] = image[0, :, :] * STD[0] + MEAN[0]
+            x[1, :, :] = image[1, :, :] * STD[1] + MEAN[1]
+            x[2, :, :] = image[2, :, :] * STD[2] + MEAN[2]
+            x = x*255
+            cv_x = x.astype(np.uint8)
+            # transpose dimensions since hog implementation requires image to be  (M, N[, C]) ndarray
+            cv_x = np.transpose(cv_x, (1,2,0))
+
+            #### HOG ####
+            hist = hog(cv_x, orientations=8, pixels_per_cell=(16, 16),
+                    cells_per_block=(3, 3), visualize=False, feature_vector=True, multichannel=True)
+
+            #### Daisy ####
+            # convert RGB to grayscale
+            grey = rgb2gray(cv_x)
+
+            # 27*27*36
+            daisy = daisy(grey,step=180, radius=58, rings=2, histograms=6,orientations=8, visualize=False)
+
+            # flatten to vector
+            P,Q,R =  daisy.shape
+            daisy = daisy.reshape((P*Q*R,))
+
+
+            #### concatenate hog and daisy ####
+            hog_daisy = np.concatenate((hist, daisy), axis=None)
+            print("hog_daisy shape is {}".format(hog_daisy.shape))
+
+            hog_daisy = torch.from_numpy(hog_daisy)
+
+            hog_daisys.append(hog_daisy)
+            hog_daisys_tensor = torch.stack(hog_daisys, dim=0)
+        
+        
+        return hog_daisys_tensor 
                    
 
 
