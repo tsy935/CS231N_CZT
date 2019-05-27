@@ -285,7 +285,7 @@ class IMetDataset_HOG(data.Dataset):
             #### HOG ####
             hist = hog(cv_x, orientations=8, pixels_per_cell=(16, 16),
                     cells_per_block=(3, 3), visualize=False, feature_vector=True, multichannel=True)
-
+            print("hog shape is {}".format(hist.shape))
             #### Daisy ####
             # convert RGB to grayscale
             grey = rgb2gray(cv_x)
@@ -296,7 +296,7 @@ class IMetDataset_HOG(data.Dataset):
             # flatten to vector
             P,Q,R =  daisy_.shape
             daisy_ = daisy_.reshape((P*Q*R,))
-
+            print("daisy shape is {}".format(daisy_.shape))
 
             #### concatenate hog and daisy ####
             hog_daisy = np.concatenate((hist, daisy_), axis=None)
@@ -304,11 +304,11 @@ class IMetDataset_HOG(data.Dataset):
 
             hog_daisy = torch.from_numpy(hog_daisy)
 
-            hog_daisys.append(hog_daisy)
-            hog_daisys_tensor = torch.stack(hog_daisys, dim=0)
+            hogs_daisys.append(hog_daisy)
+            hogs_daisys_tensor = torch.stack(hogs_daisys, dim=0)
         
         
-        return hog_daisys_tensor 
+        return hogs_daisys_tensor 
                    
 
 
