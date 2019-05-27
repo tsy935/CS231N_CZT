@@ -5,7 +5,7 @@ cd ..
 python ./main.py \
   --do_train \
   --do_predict \
-  --split test \
+  --split dev \
   --use_pretrained \
   --model_name baseline_hog \
   --lr_init 1e-5 \
