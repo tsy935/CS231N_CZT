@@ -60,10 +60,10 @@ class ResNet50_HOGFC(nn.Module):
         modules = list(self.resnet50.children())[:-1]
         self.conv_features = nn.Sequential(*modules) # all layers until last pool layer (inclusive)
             
-        # self.hogfc = nn.Linear(num_ftrs+1568, NUM_CLASSES)
+        self.hogfc = nn.Linear(num_ftrs+10368, NUM_CLASSES)
         
         # one layer fc works, we can run MLP
-        self.hogmlp = MultiLayerPerceptron(num_ftrs+10368)
+        # self.hogmlp = MultiLayerPerceptron(num_ftrs+10368)
             
         
     def forward(self, x, hog_features):
