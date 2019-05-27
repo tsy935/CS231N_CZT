@@ -243,15 +243,15 @@ class IMetDataset_HOG(data.Dataset):
             grey = rgb2gray(cv_x)
 
             # 27*27*36
-            daisy = daisy(grey,step=180, radius=58, rings=2, histograms=6,orientations=8, visualize=False)
+            daisy_ = daisy(grey,step=180, radius=58, rings=2, histograms=6,orientations=8, visualize=False)
 
             # flatten to vector
-            P,Q,R =  daisy.shape
-            daisy = daisy.reshape((P*Q*R,))
-            print("daisy shape is {}".format(daisy.shape))
-            daisy = torch.from_numpy(daisy)
+            P,Q,R =  daisy_.shape
+            daisy = daisy_.reshape((P*Q*R,))
+            print("daisy shape is {}".format(daisy_.shape))
+            daisy = torch.from_numpy(daisy_)
 
-            daisys.append(daisy)
+            daisys.append(daisy_)
             daisys_tensor = torch.stack(daisys, dim=0)
         
         
@@ -291,15 +291,15 @@ class IMetDataset_HOG(data.Dataset):
             grey = rgb2gray(cv_x)
 
             # 27*27*36
-            daisy = daisy(grey,step=180, radius=58, rings=2, histograms=6,orientations=8, visualize=False)
+            daisy_ = daisy(grey,step=180, radius=58, rings=2, histograms=6,orientations=8, visualize=False)
 
             # flatten to vector
-            P,Q,R =  daisy.shape
-            daisy = daisy.reshape((P*Q*R,))
+            P,Q,R =  daisy_.shape
+            daisy_ = daisy_.reshape((P*Q*R,))
 
 
             #### concatenate hog and daisy ####
-            hog_daisy = np.concatenate((hist, daisy), axis=None)
+            hog_daisy = np.concatenate((hist, daisy_), axis=None)
             print("hog_daisy shape is {}".format(hog_daisy.shape))
 
             hog_daisy = torch.from_numpy(hog_daisy)
