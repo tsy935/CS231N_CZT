@@ -120,8 +120,8 @@ class IMetDataset_HOG(data.Dataset):
             label_tensor = None
             #pos_weights = None
         
-        # hog_tensor = self.compute_HOG(img_tensor)
-        hog_tensor = self.compute_HOG_Daisy(img_tensor)
+        hog_tensor = self.compute_HOG(img_tensor)
+        # hog_tensor = self.compute_HOG_Daisy(img_tensor)
         
 #        print('Shape of hog_tensor:{}'.format(hog_tensor.size()))
         example = (img_tensor,

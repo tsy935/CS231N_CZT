@@ -63,7 +63,7 @@ class ResNet50_HOGFC(nn.Module):
         # self.hogfc = nn.Linear(num_ftrs+1568, NUM_CLASSES)
         
         # one layer fc works, we can run MLP
-        self.hogmlp = MultiLayerPerceptron(num_ftrs+1568)
+        self.hogmlp = MultiLayerPerceptron(num_ftrs+10368)
             
         
     def forward(self, x, hog_features):
