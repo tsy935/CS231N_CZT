@@ -79,9 +79,9 @@ class ResNet50_HOGFC(nn.Module):
         hog_features = hog_features.reshape(B,-1)
         features_concat = torch.cat((resnet_features.float(), hog_features.float()),dim=1)
         # fc
-        # scores = self.hogfc(features_concat)
+        scores = self.hogfc(features_concat)
         # mlp        
-        scores = self.hogmlp(features_concat)
+        # scores = self.hogmlp(features_concat)
         return scores
     
     def set_parameter_requires_grad(self, model, feature_extracting=False, nlayers_to_freeze=None):
