@@ -49,8 +49,10 @@ class EncoderCNNwithHOG(nn.Module):
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
             
         # Exclude linear and pool layers
-        modules = list(self.resnet50.children())[:-2]
-        self.conv_features = nn.Sequential(*modules) # all layers until last pool layer (inclusive)
+        modules_hog = list(self.resnet50.children())[:-1]
+        modules_rnn = list(self.resnet50.children())[:-2]
+        self.conv_features = nn.Sequential(*modules_rnn) # all layers until last pool layer (inclusive)
+        self.fc_features = nn.Sequential(*modules_hog)
  
         # Add HOG to last FC layer
         self.hogfc = nn.Linear(num_ftrs+10368, NUM_CLASSES)
@@ -69,24 +71,25 @@ class EncoderCNNwithHOG(nn.Module):
         """
         
         # Features from last conv layer
-        conv_feat = self.conv_features(x) 
-        conv_feat = self.adaptive_pool(conv_feat) # (batch_size, 2048, encoded_image_size, encoded_image_size)
+        resnet_features = self.fc_features(x) # (batch_size, 2048)
         # batch size
-        B = conv_feat.shape[0]
+        B = resnet_features.shape[0]
         # flatten resnet_features
-        conv_feat = conv_feat.reshape(B,-1)
+        resnet_features = resnet_features.reshape(B,-1)
         # concatenate with hog feature
         # convert to (batch_size*6, hog_vector_size)
         hog_features = hog_features.reshape(B,-1)
-        features_concat = torch.cat((conv_feat.float(), hog_features.float()),dim=1)
+        features_concat = torch.cat((resnet_features.float(), hog_features.float()),dim=1)
         # FC
         scores = self.hogfc(features_concat)
         # mlp        
         # scores = self.hogmlp(features_concat) 
         
         # For RNN        
-        v_feat = conv_feat.permute(0, 2, 3, 1) # (batch_size, encoded_image_size, encoded_image_size, 2048)
         v_prob = self.sigmoid(scores) # (batch_size, NUM_CLASSES)
+        v_feat = self.conv_features(x) # (batch_size, 2048, image_size/32, image_size/32))
+        v_feat = self.adaptive_pool(v_feat) # (batch_size, 2048, encoded_image_size, encoded_image_size)
+        v_feat = v_feat.permute(0, 2, 3, 1) # (batch_size, encoded_image_size, encoded_image_size, 2048)
     
         return v_prob, v_feat
                
