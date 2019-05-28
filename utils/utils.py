@@ -189,8 +189,8 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
     # threshold search
     if not is_hard_label:
         if thresh_search:
-            thresh, _ = threshold_search(y_pred, labels, average)
-            # thresh, _ = threshold_search_proportional(y_pred, labels, average,proportion)
+            # thresh, _ = threshold_search(y_pred, labels, average)
+            thresh, _ = threshold_search_proportional(y_pred, labels, average,proportion)
         else:
             if thresh is None:
                 thresh = 0.5

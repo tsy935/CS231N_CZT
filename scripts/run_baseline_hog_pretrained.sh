@@ -20,4 +20,5 @@ python ./main.py \
   --feature_extracting \
   --prob_path_thresh 2.5 \
   --resnet_path /mnt/disks/large/output/vm1_featureExtract/best.pth.tar \
-  --save_dir /mnt/disks/large/output/baseline_hog
+  --save_dir /mnt/disks/large/output/baseline_hog \
+  --thresh_search
