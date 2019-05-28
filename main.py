@@ -385,7 +385,8 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
                                                      orig_id_all, is_test=False, 
                                                      thresh_search=args.thresh_search, thresh=thresh, 
-                                                     is_hard_label=is_hard_label)
+                                                     is_hard_label=is_hard_label, 
+                                                     baseline_thresh_prop_power=args.baseline_thresh_prop_power)
         results_list = [('Loss', nll_meter.avg),
                         ('F2', scores_dict['F2']),
                         ('F1', scores_dict['F1']),
@@ -398,7 +399,8 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         writeout_dict = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
                                         orig_id_all, preproc_all, is_test=True, 
                                         thresh_search=False, thresh=best_thresh,
-                                        is_hard_label=is_hard_label)
+                                        is_hard_label=is_hard_label,
+                                        baseline_thresh_prop_power=args.baseline_thresh_prop_power)
         results = {}
 
     

@@ -157,7 +157,7 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     return model
 
 
-def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search=False, thresh=None, is_hard_label=False):
+def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search=False, thresh=None, is_hard_label=False, baseline_thresh_prop_power=0):
     """Helper function to compute evaluation metrics: F1 & F2 scores
     Args:
         y_pred: Predicted probabilities of all preprocessed images
@@ -182,9 +182,9 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
 
     proportion = np.array(pd.read_csv(TRAIN_PROPORTION_PATH))
     proportion = proportion[:,1]
-    proportion/= np.sum(proportion)
-    proportion2d= np.repeat(proportion, labels.shape[0])
-    proportion2d=proportion2d.reshape(labels.shape,order='F')
+    # lower bound proportion by 0.01, power=0 is equivalent to fixed threshold for every class
+    proportion = np.clip(proportion, 0.01, 1) 
+    proportion = np.power(proportion,baseline_thresh_prop_power)
 
     # threshold search
     if not is_hard_label:
@@ -198,8 +198,7 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
         y_pred_labels = []
         y_labels = []
         for idx, orig_id in enumerate(orig_id_all):
-            curr_pred = (y_pred[idx] > thresh).astype(int)
-            # curr_pred = (y_pred[idx] > thresh*proportion).astype(int)
+            curr_pred = (y_pred[idx] > thresh*proportion).astype(int)
             writeout_dict[orig_id] = curr_pred
             y_pred_labels.append(curr_pred)
             y_labels.append(labels[idx])
@@ -247,15 +246,10 @@ def threshold_search_proportional(y_pred, y_true, average, proportion):
             proportions:
 
     """
-    proportion/= np.sum(proportion)
-    proportion2d= np.repeat(proportion, y_true.shape[0])
-    proportion2d=proportion2d.reshape(y_true.shape,order='F')
-
     score = []
-    candidates = list(np.arange(0, 1/np.max(proportion), 0.01))
+    candidates = list(np.arange(0, 1.0/np.max(proportion), 0.01))
     for _, th in enumerate(candidates):
         yp = (y_pred>th*proportion).astype(int)
-        #yp = (y_pred > th*proportion2d[y_true.astype(bool)].reshape(-1,1)).astype(int)
         score.append(fbeta_score(y_true=y_true, y_pred=yp, beta=2, average=average))
     score = np.array(score)
     pm = score.argmax()
