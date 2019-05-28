@@ -49,7 +49,7 @@ class EncoderCNNwithHOG(nn.Module):
             self.resnet50.fc = nn.Linear(num_ftrs, NUM_CLASSES)
             
         # Exclude linear and pool layers
-        modules = list(self.resnet50.children())[:-1]
+        modules = list(self.resnet50.children())[:-2]
         self.conv_features = nn.Sequential(*modules) # all layers until last pool layer (inclusive)
  
         # Add HOG to last FC layer
@@ -70,6 +70,7 @@ class EncoderCNNwithHOG(nn.Module):
         
         # Features from last conv layer
         conv_feat = self.conv_features(x) 
+        conv_feat = self.adaptive_pool(conv_feat) # (batch_size, 2048, encoded_image_size, encoded_image_size)
         # batch size
         B = conv_feat.shape[0]
         # flatten resnet_features
@@ -83,9 +84,8 @@ class EncoderCNNwithHOG(nn.Module):
         # mlp        
         # scores = self.hogmlp(features_concat) 
         
-        # For RNN
-        v_feat = self.adaptive_pool(conv_feat) # (batch_size, 2048, encoded_image_size, encoded_image_size)
-        v_feat = v_feat.permute(0, 2, 3, 1) # (batch_size, encoded_image_size, encoded_image_size, 2048)
+        # For RNN        
+        v_feat = conv_feat.permute(0, 2, 3, 1) # (batch_size, encoded_image_size, encoded_image_size, 2048)
         v_prob = self.sigmoid(scores) # (batch_size, NUM_CLASSES)
     
         return v_prob, v_feat
