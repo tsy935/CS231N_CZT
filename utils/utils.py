@@ -247,7 +247,7 @@ def threshold_search_proportional(y_pred, y_true, average, proportion):
 
     """
     score = []
-    candidates = list(np.arange(0, 1/np.max(proportion), 0.01))
+    candidates = list(np.arange(0, 1.0/np.max(proportion), 0.01))
     for _, th in enumerate(candidates):
         yp = (y_pred>th*proportion).astype(int)
         score.append(fbeta_score(y_true=y_true, y_pred=yp, beta=2, average=average))
