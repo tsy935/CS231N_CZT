@@ -14,7 +14,7 @@ python ./main.py \
   --train_batch_size 32 \
   --loss_fn_name BCE \
   --write_outputs \
-  --eval_steps 20000 \
+  --eval_steps 500 \
   --metric_avg samples \
   --max_pos_weight 10 \
   --feature_extracting \
