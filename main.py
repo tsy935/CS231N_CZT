@@ -16,10 +16,9 @@ from args.args import get_args
 from collections import OrderedDict
 from json import dumps
 from models.ResNet import ResNet50
-
 from models.CNN_RNN import CNN_RNN
-
 from models.ResNet_HOGFC import ResNet50_HOGFC
+from models.HOG_CNN_RNN import HOG_CNN_RNN
 
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
@@ -73,6 +72,10 @@ def main(args):
             model = CNN_RNN(args, device=device)
         elif args.model_name == "baseline_hog":
             model = ResNet50_HOGFC(args)
+        elif args.model_name == "hog_cnn-rnn":
+            model = HOG_CNN_RNN(args, device=device)
+        else:
+            raise ValueError('Invalid model name.')
             
         model = nn.DataParallel(model, args.gpu_ids)
         if not args.do_train: # load from saved model
@@ -103,12 +106,12 @@ def main(args):
         print('{} prediction results: {}'.format(args.split, results_str))
         
         # Save alphas and results
-        test_results_dir = os.path.join(test_save_dir, 'test_results')
+        test_results_dir = os.path.join(test_save_dir, args.split+'_results')
         with open(test_results_dir, 'wb') as f:
             pickle.dump(results, f)
             
-        if args.model_name == 'cnn-rnn':
-            test_alphas_dir = os.path.join(test_save_dir, 'test_visualization')
+        if args.model_name == 'cnn-rnn' or args.model_name == 'hog_cnn-rnn':
+            test_alphas_dir = os.path.join(test_save_dir, args.split+'_visualization')
             with open(test_alphas_dir, 'wb') as f:
                 pickle.dump(vis_dict, f) 
             
@@ -135,6 +138,11 @@ def train(args, device, train_save_dir):
         model = CNN_RNN(args, device)
     elif args.model_name == "baseline_hog":
         model = ResNet50_HOGFC(args)
+    elif args.model_name == "hog_cnn-rnn":
+        model = HOG_CNN_RNN(args, device=device)
+    else:
+        raise ValueError('Invalid model name.')
+        
         
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
@@ -164,7 +172,7 @@ def train(args, device, train_save_dir):
 
     # Get data loader
     log.info('Building dataset...')  
-    if args.extract_hog_feature == True or args.model_name=="baseline_hog":
+    if args.extract_hog_feature == True or args.model_name=="baseline_hog" or args.model_name == "hog_cnn-rnn":
         train_dataset = IMetDataset_HOG(root_dir=Path(TRAIN_PATH),
                                 csv_file=TRAIN_CSV,
                                 mode='train')
@@ -210,13 +218,23 @@ def train(args, device, train_save_dir):
                 
                     loss = loss_fn(logits, labels) # we use BCEWithLogitsLoss
                     loss_val = loss.item()
-                else:
+                elif args.model_name == 'cnn-rnn':
                     loss, _, _ = model(imgs.view(-1, C, H, W), 
                                        labels=labels.view(-1, NUM_CLASSES), 
                                        loss_fn=loss_fn,
                                        is_eval=False,
                                        test_only=False) # fuse batch size and ncrops
                     loss_val = loss.item()
+                else: # HOG_CNN_RNN
+                    hogs = hogs.to(device)
+                    loss, _, _ = model(imgs.view(-1, C, H, W),
+                                       hogs,
+                                       labels=labels.view(-1, NUM_CLASSES), 
+                                       loss_fn=loss_fn,
+                                       is_eval=False,
+                                       test_only=False) # fuse batch size and ncrops
+                    loss_val = loss.item()
+                    
 
                 # Backward
                 loss.backward()
@@ -281,7 +299,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         data_dir = TRAIN_PATH
         csv_file = TRAIN_CSV
         
-    if args.extract_hog_feature == True or args.model_name=="baseline_hog":
+    if args.extract_hog_feature == True or args.model_name=="baseline_hog" or args.model_name == "hog_cnn-rnn":
         dataset = IMetDataset_HOG(root_dir=Path(data_dir),
                           csv_file=csv_file,
                           mode='evaluate')
@@ -342,11 +360,21 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
                 alphas = None
             else:
                 is_hard_label = True # for CNN-RNN, y_pred is hard labels
-                loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
-                                             labels=labels, 
-                                             loss_fn=loss_fn,
-                                             is_eval=True,
-                                             test_only=is_test) # fuse batch size and ncrops
+                
+                if args.model_name == 'cnn-rnn':
+                    loss, y_pred, alphas = model(imgs.view(-1, C, H, W), 
+                                                 labels=labels, 
+                                                 loss_fn=loss_fn,
+                                                 is_eval=True,
+                                                 test_only=is_test) # fuse batch size and ncrops
+                else: # HOG_CNN_RNN
+                    hogs = hogs.to(device)
+                    loss, y_pred, alphas = model(imgs.view(-1, C, H, W),
+                                                 hogs,
+                                                 labels=labels, 
+                                                 loss_fn=loss_fn,
+                                                 is_eval=True,
+                                                 test_only=is_test) # fuse batch size and ncrops
                 y_pred_crops = y_pred                
                 if labels is not None:
                     labels = labels[:,0,:]
@@ -370,7 +398,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         
         # Save last batch alphas and images for visualization
         vis_dict = {}
-        if args.model_name == 'cnn-rnn':           
+        if args.model_name == 'cnn-rnn' or args.model_name == 'hog_cnn-rnn':           
             vis_dict['imgs'] = imgs.cpu().numpy()
             vis_dict['alphas'] = alphas  
             vis_dict['labels_pred'] = y_pred_crops
