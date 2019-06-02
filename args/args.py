@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--model_name',
                         type=str,
                         default='baseline',
-                        choices=('baseline','cnn-rnn','baseline_hog'),
+                        choices=('baseline','cnn-rnn','baseline_hog','hog_cnn-rnn'),
                         help='Which model to use.')
     parser.add_argument('--lr_init',
                         type=float,
