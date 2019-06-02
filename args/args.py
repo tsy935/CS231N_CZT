@@ -139,6 +139,11 @@ def get_args():
     parser.add_argument('--extract_hog_feature',
                         default=False,
                         help='Whether to extract hog features while loading data')
+    parser.add_argument('--baseline_thresh_prop_power',
+                        type=float,
+                        default=0.0,
+                        help='Raise proportion to a power (between 0 and 1) when thresh search')
+
     
     args = parser.parse_args()  
     
