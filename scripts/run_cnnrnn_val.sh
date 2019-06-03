@@ -11,9 +11,10 @@ python ./main.py \
   --write_outputs \
   --metric_avg samples \
   --feature_extracting \
-  --prob_path_thresh 2.5 \
+  --prob_path_thresh 10 \
+  --test_batch_size 128 \
   --beam_search \
-  --beam_size 3 \
+  --beam_size 5 \
   --load_path /mnt/disks/large/output/cnnrnn/train/train-11/best.pth.tar \
   --best_val_results /mnt/disks/large/output/cnnrnn/train/train-11/best_val_results \
   --save_dir /mnt/disks/large/output/cnnrnn
