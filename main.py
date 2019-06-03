@@ -411,7 +411,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
             thresh = None
         else:
             thresh = best_thresh
-        scores_dict, writeout_dict, best_thresh, y_pred_raw = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
+        scores_dict, writeout_dict, best_thresh = utils.eval_dict(y_pred_all, y_true_all, args.metric_avg, 
                                                      orig_id_all, is_test=False, 
                                                      thresh_search=args.thresh_search, thresh=thresh, 
                                                      is_hard_label=is_hard_label, 
@@ -446,7 +446,9 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         df_out.to_csv(out_file_name, index=False)
         print('Prediction written to {}!'.format(out_file_name))
 
-        df_y_pred_raw = pd.DataFrame(y_pred_raw)  
+
+        y_pred_all = np.array(y_pred_all)
+        df_y_pred_raw = pd.DataFrame(y_pred_all)  
         out_file_name_raw = os.path.join(test_save_dir,args.split+'_prediction_raw_prob.csv')
         df_y_pred_raw.to_csv(out_file_name_raw, index=False)
         print('Probability Prediction written to {}!'.format(out_file_name_raw))      
