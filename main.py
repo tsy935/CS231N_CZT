@@ -447,7 +447,8 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
         print('Prediction written to {}!'.format(out_file_name))
 
 
-        y_pred_all = np.array(y_pred_all)
+        # y_pred_all = np.array(y_pred_all)
+        y_pred_all = np.concatenate(y_pred_all, axis=0)
         df_y_pred_raw = pd.DataFrame(y_pred_all)  
         out_file_name_raw = os.path.join(test_save_dir,args.split+'_prediction_raw_prob.csv')
         df_y_pred_raw.to_csv(out_file_name_raw, index=False)
