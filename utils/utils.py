@@ -219,6 +219,7 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
         scores_dict['F1'] = f1_score(y_true=y_labels, y_pred=y_pred_labels, average=average)
         scores_dict['recall'] = recall_score(y_true=y_labels, y_pred=y_pred_labels, average=average)
         scores_dict['precision'] = precision_score(y_true=y_labels, y_pred=y_pred_labels, average=average)
+        # added return raw probability y_pred
         return scores_dict, writeout_dict, thresh
     else:
         return writeout_dict
