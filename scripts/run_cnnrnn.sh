@@ -10,7 +10,7 @@ python ./main.py \
   --model_name cnn-rnn \
   --lr_init 5e-4 \
   --l2_wd 1e-5 \
-  --num_epochs 15 \
+  --num_epochs 25 \
   --train_batch_size 32 \
   --loss_fn_name BCE \
   --write_outputs \
