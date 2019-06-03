@@ -199,6 +199,8 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
         y_labels = []
         for idx, orig_id in enumerate(orig_id_all):
             curr_pred = (y_pred[idx] > thresh*proportion).astype(int)
+            
+            orig_id = orig_id.strip('.png')
             writeout_dict[orig_id] = curr_pred
             y_pred_labels.append(curr_pred)
             y_labels.append(labels[idx])
@@ -208,6 +210,9 @@ def eval_dict(y_pred, labels, average, orig_id_all, is_test=False, thresh_search
     else:
         y_pred_labels = y_pred
         y_labels = labels
+        for idx, orig_id in enumerate(orig_id_all):
+            orig_id = orig_id.strip('.png')
+            writeout_dict[orig_id] = y_pred_labels[idx]
         
     if not is_test:
         scores_dict['F2'] = fbeta_score(y_true=y_labels, y_pred=y_pred_labels, beta=2, average=average)
