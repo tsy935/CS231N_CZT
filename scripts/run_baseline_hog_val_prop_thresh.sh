@@ -12,8 +12,8 @@ python ./main.py \
   --metric_avg samples \
   --max_pos_weight 10 \
   --feature_extracting \
-  --load_path  /mnt/disks/large/output/baseline_hog/train/train-15/best.pth.tar \
-  --best_val_results /mnt/disks/large/output/baseline_hog/train/train-15/best_val_results\
+  --load_path  /mnt/disks/large/output/baseline_hog/train/train-07/best.pth.tar \
+  --best_val_results /mnt/disks/large/output/baseline_hog/train/train-07/best_val_results\
   --save_dir /mnt/disks/large/output/baseline_hog_threshold_search_prop\
-  --baseline_thresh_prop_power 0.05 \
+  --baseline_thresh_prop_power 0.0 \
   --thresh_search 
