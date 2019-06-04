@@ -4,7 +4,7 @@ cd ..
 
 python ./main.py \
   --do_predict \
-  --split test \
+  --split dev \
   --use_pretrained \
   --model_name cnn-rnn \
   --loss_fn_name BCE \
@@ -17,4 +17,4 @@ python ./main.py \
   --beam_size 5 \
   --load_path /mnt/disks/large/output/cnnrnn/train/train-11/best.pth.tar \
   --best_val_results /mnt/disks/large/output/cnnrnn/train/train-11/best_val_results \
-  --save_dir /mnt/disks/large/output/cnnrnn
+  --save_dir /mnt/disks/large/output/cnnrnn_final

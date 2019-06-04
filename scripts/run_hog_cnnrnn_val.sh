@@ -4,7 +4,7 @@ cd ..
 
 python ./main.py \
   --do_predict \
-  --split test \
+  --split dev \
   --use_pretrained \
   --model_name hog_cnn-rnn \
   --loss_fn_name BCE \
