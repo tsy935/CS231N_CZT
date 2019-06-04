@@ -402,6 +402,7 @@ def evaluate(model, args, test_save_dir, device, is_test=False, write_outputs=Fa
             vis_dict['imgs'] = imgs.cpu().numpy()
             vis_dict['alphas'] = alphas  
             vis_dict['labels_pred'] = y_pred_crops
+            vis_dict['orig_id'] = orig_id
                  
     
     # if label is available

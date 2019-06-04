@@ -200,6 +200,8 @@ class AttnDecoderRNN(nn.Module):
             for t in range(max_label_len):
                 # Pass through attention layer
                 z, alpha = self.attn(v_feat, h)
+                #print('Size of alpha: {}'.format(alpha.shape))
+                #print(alpha)
                 gate = self.sigmoid(self.f_beta(h))
                 z = gate * z
                 # Pass through prediction layer
@@ -243,6 +245,8 @@ class AttnDecoderRNN(nn.Module):
                 prob_path = np.ones((batch_size, max_label_len))
                 hard_labels = np.zeros((batch_size, NUM_CLASSES))
                 thresholds = np.zeros((batch_size, max_label_len))
+                masks = np.zeros((batch_size, max_label_len))
+                masked_alphas = np.zeros(alphas.shape)
                 for t in range(max_label_len):
                     # Compute normalized path probability, so that it is invariant to path length
                     #prob_path[:,t] = np.mean(np.log(soft_probs[:,:t]), axis=1)
@@ -251,15 +255,16 @@ class AttnDecoderRNN(nn.Module):
                     # threshold to compare to
                     l_t = y_tilt_num[:,:t+1].astype(int) # (batch_size, t)                    
                     curr_class_prop = self.class_prop[l_t] # (batch_size, t)
-                    #print(curr_class_prop)
-                    thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
+                    
+                    if t > 0:
+                        thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
+                    else:
+                        thresholds[:,t] = 0.
             
 #                print(prob_path)
                 #masks = prob_path >= prob_path_thresh
                 # Use different thresholds for different classes
-                #print(thresholds)
                 masks = prob_path >= thresholds
-
                 masked_alphas = alphas * masks[:,:,np.newaxis]
                 for i in range(batch_size):
                     curr_labels = y_tilt_num[i, masks[i,:]].astype(int)
@@ -346,7 +351,8 @@ class AttnDecoderRNN(nn.Module):
                     soft_probs[:,ik,step] = prob_max
                 l_t = y_tilt_num_beam[:,0,step,:step+1].astype(int) # (batch_size, t)
                 curr_class_prop = self.class_prop[l_t] # (batch_size, t)
-                thresholds[:,step] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(step+1))
+                #thresholds[:,step] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(step+1))
+                thresholds[:,step] = 0.
 
             else:
                 for ik in range(k):
@@ -412,7 +418,6 @@ class AttnDecoderRNN(nn.Module):
             hard_labels[idx, curr_labels] = 1
         total_loss = None
         return hard_labels, total_loss, masked_alphas
-
     
 class CNN_RNN(nn.Module):
     """
