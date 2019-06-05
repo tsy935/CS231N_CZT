@@ -1,4 +1,5 @@
-# CS231N_CZT
+# Multi-label Image Classification with Visual Attention and Handcrafted Features
+### CS231N Spring 2019
 Welcome to CS231N project playground!
 
 ## Kaggle challenge
