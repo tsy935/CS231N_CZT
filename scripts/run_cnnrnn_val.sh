@@ -12,7 +12,7 @@ python ./main.py \
   --metric_avg samples \
   --feature_extracting \
   --prob_path_thresh 2.5 \
-  --test_batch_size 128 \
+  --test_batch_size 64 \
   --beam_search \
   --beam_size 5 \
   --load_path /mnt/disks/large/output/cnnrnn/train/train-11/best.pth.tar \

@@ -58,8 +58,8 @@ class IMetDataset(data.Dataset):
                              
         else:
             # if evaluate, resize and crop all images
-            #preproc = 'resize_crop'
-            preproc = 'crop'
+            preproc = 'resize_crop'
+            #preproc = 'crop'
         #print(preproc)
         
         # data augmentation
