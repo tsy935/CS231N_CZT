@@ -59,7 +59,7 @@ class IMetDataset(data.Dataset):
         else:
             # if evaluate, resize and crop all images
             preproc = 'resize_crop'
-        
+            #preproc = 'crop'
         #print(preproc)
         
         # data augmentation
@@ -76,7 +76,7 @@ class IMetDataset(data.Dataset):
                 for i_crp in range(NUM_CROPS):
                     imgs.append(self.transform_eval_crp(img))
                 img_tensor = torch.stack(imgs, dim = 0) # shape (6, C, H, W)
-        else: # resize only
+        elif preproc == 'resize': # resize only
             if self.mode == 'train':
                 img_rs = []
                 for i_rs in range(NUM_CROPS+1):
@@ -86,6 +86,17 @@ class IMetDataset(data.Dataset):
                 img_rs = self.transform_eval_rs(img)
                 C, H, W = img_rs.size()
                 img_tensor = img_rs.view(1, C, H, W) # shape (1, C, H, W)
+        else: # crop only
+            if self.mode == 'train':
+                img_crp = []
+                for i_crp in range(NUM_CROPS+1):
+                    img_crp.append(self.transform_train_crp(img))
+                img_tensor = torch.stack(img_crp, dim=0)
+            else:
+                img_crp = []
+                for i_crp in range(NUM_CROPS+1):
+                    img_crp.append(self.transform_eval_crp(img))
+                img_tensor = torch.stack(img_crp, dim=0)
                 
         # get label
         if label is not None: # if label is available

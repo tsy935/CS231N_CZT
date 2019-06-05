@@ -276,7 +276,11 @@ class AttnDecoderRNN(nn.Module):
                     l_t = y_tilt_num[:,:t+1].astype(int) # (batch_size, t)                    
                     curr_class_prop = self.class_prop[l_t] # (batch_size, t)
                     #print(curr_class_prop)
-                    thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
+                    
+                    if t > 0:
+                        thresholds[:,t] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(t+1))
+                    else:
+                        thresholds[:,t] = 0.
             
 #                print(prob_path)
                 #masks = prob_path >= prob_path_thresh
@@ -370,8 +374,8 @@ class AttnDecoderRNN(nn.Module):
                     soft_probs[:,ik,step] = prob_max
                 l_t = y_tilt_num_beam[:,0,step,:step+1].astype(int) # (batch_size, t)
                 curr_class_prop = self.class_prop[l_t] # (batch_size, t)
-                thresholds[:,step] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(step+1))
-
+                #thresholds[:,step] = np.prod(curr_class_prop * prob_path_thresh, axis=1)**(1/(step+1))
+                thresholds[:,step] = 0.
             else:
                 for ik in range(k):
                     h = h_beam[:,ik,step-1,:].to(device)
